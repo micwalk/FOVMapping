@@ -220,6 +220,7 @@ public class FOVManager : MonoBehaviour
 			forwards.Clear();
 			angleCosines.Clear();
 
+			// Debug.Log($"Begin FOVManager.SetShaderValues with {FOVAgents.Count} agents");
 			for (int i = 0; i < FOVAgents.Count; i++)
 			{
 				FOVAgent agent = FOVAgents[i];
@@ -383,6 +384,7 @@ public class FOVManager : MonoBehaviour
 
 			// Agent may have died but we can't update visibilityTargetAgents during async callback so have to re-check
 			if (!agent) {
+				// Debug.Log("Agent died while updating FOW.");
 				continue;
 			}
 
@@ -402,10 +404,15 @@ public class FOVManager : MonoBehaviour
 	public void AddFOVAgent(FOVAgent agent)
 	{
 		FOVAgents.Add(agent);
+		// Debug.Log($"Added FOV agent: {agent.transform.parent?.name ?? agent.name}. Post-Count: {FOVAgents.Count}");
 	}
 
 	public void RemoveFOVAgent(FOVAgent agent) 
 	{
+		//Debug stuff
+		//Find agent index before removing
+		int agentIndex = FOVAgents.IndexOf(agent);
+		// Debug.Log($"Removing FOV agent: {agent.transform.parent?.name ?? agent.name} at index {agentIndex}. Pre-Count: {FOVAgents.Count}");
 		FOVAgents.Remove(agent);
 	}
 
