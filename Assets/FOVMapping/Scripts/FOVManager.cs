@@ -223,6 +223,11 @@ public class FOVManager : MonoBehaviour
 			for (int i = 0; i < FOVAgents.Count; i++)
 			{
 				FOVAgent agent = FOVAgents[i];
+				if (agent == null) {
+					Debug.LogError($"FOVAgent at index {i} is null! Agent list Count: {FOVAgents.Count}.");
+					continue;
+				}
+				
 				if (agent.enabled && agent.contributeToFOV)
 				{
 					Vector3 relativePos = Vector3.Scale(transform.InverseTransformPoint(agent.transform.position), transform.lossyScale); // Position of the agent relative to the FOW plane
@@ -375,6 +380,11 @@ public class FOVManager : MonoBehaviour
 		for (int i = 0; i < visibilityTargetAgents.Count; ++i)
 		{
 			FOVAgent agent = visibilityTargetAgents[i];
+
+			// Agent may have died but we can't update visibilityTargetAgents during async callback so have to re-check
+			if (!agent) {
+				continue;
+			}
 
 			bool isInSight = alphaSamples[i] <= agent.disappearAlphaThreshold;
 			agent.SetUnderFOW(isInSight);

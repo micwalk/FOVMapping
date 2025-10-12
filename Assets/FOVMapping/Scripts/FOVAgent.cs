@@ -44,6 +44,15 @@ public class FOVAgent : MonoBehaviour
 		meshRenderers = GetComponentsInChildren<MeshRenderer>().ToList();
 	}
 
+	/// <summary>
+	/// Override the mesh renderers with contents from a new array. Typicaly from a FindComponentsInXYZ<> call.
+	/// </summary>
+	/// <param name="meshRenderers">Array of mesh renderers to overwrite the current list with.</param>
+	public void OverrideMeshRenderers(MeshRenderer[] meshRenderers) {
+		this.meshRenderers.Clear();
+		this.meshRenderers.AddRange(meshRenderers);
+	}
+
 	[HideInInspector]
 	public void SetUnderFOW(bool isUnder)
 	{
