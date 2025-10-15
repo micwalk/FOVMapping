@@ -172,7 +172,7 @@ namespace FOVMapping
             double endTime = Time.realtimeSinceStartup;
             if (isSuccessful)
             {
-                EditorUtility.DisplayDialog("FOV Map", $"FOV map has been baked successfully in {(int)(endTime - startTime)} seconds", "OK");
+                EditorUtility.DisplayDialog("FOV Map", $"FOV map has been baked successfully in {(int)(endTime - startTime)} seconds ({((endTime - startTime) / 60):F2} minutes)", "OK");
                 
                 // Auto-assign the generated FOV map to settings
                 string assetPath = $"Assets/{settings.path}/{settings.fileName}.asset";
