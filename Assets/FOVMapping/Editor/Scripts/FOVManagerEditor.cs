@@ -74,7 +74,7 @@ namespace FOVMapping
             if (fovManager.Settings == null)
             {
                 // Check if legacy field is populated
-                if (fovManager.LegacyFOVMapArray != null)
+                if (fovMapArrayLegacyProperty.objectReferenceValue != null)
                 {
                     EditorGUILayout.HelpBox("Attention: You are using the legacy FOVMapArray field. Please switch to the new ScriptableObject-based workflow for better functionality and future compatibility. Create a FOVBakeSettings asset and assign it to the Settings field above.", MessageType.Warning);
                 }
@@ -86,7 +86,7 @@ namespace FOVMapping
             else
             {
                 // If settings are assigned, clear the legacy field
-                if (fovManager.LegacyFOVMapArray != null)
+                if (fovMapArrayLegacyProperty.objectReferenceValue != null)
                 {
                     fovMapArrayLegacyProperty.objectReferenceValue = null;
                     EditorUtility.SetDirty(fovManager);

@@ -104,9 +104,7 @@ public class FOVManager : MonoBehaviour
 	[System.Obsolete("This field is deprecated. Use FOVBakeSettings.FOVMapArray instead for better workflow.")]
 	[FormerlySerializedAs("FOVMapArray")]
 	private Texture2DArray FOVMapArray_legacy;
-
-	public Texture2DArray LegacyFOVMapArray => FOVMapArray_legacy;
-
+	
 	[SerializeField]
 	[Tooltip("(Do not modify) FOV mapping shader")]
 	private Shader FOVShader;
