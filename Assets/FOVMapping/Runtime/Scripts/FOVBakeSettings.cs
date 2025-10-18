@@ -47,6 +47,11 @@ namespace FOVMapping
         [Tooltip("(Advanced) Surfaces located below this vertical angle are never considered vertical.")] 
         public float blockedRayAngleThreshold = 0.0f;
 
+        [Header("Performance Settings")]
+        [Tooltip("(Advanced) Maximum number of raycasts to process in a single batch. Higher values = better performance but more memory usage. Lower values = less memory but slower processing.")]
+        [Range(1, 1000000)]
+        public int maxBatchSize = 500;
+
 
         [Header("Generated Assets")]
         [Tooltip("Generated FOV map Texture2DArray")]
@@ -73,7 +78,8 @@ namespace FOVMapping
                 samplesPerDirection = this.samplesPerDirection,
                 binarySearchCount = this.binarySearchCount,
                 blockingSurfaceAngleThreshold = this.blockingSurfaceAngleThreshold,
-                blockedRayAngleThreshold = this.blockedRayAngleThreshold
+                blockedRayAngleThreshold = this.blockedRayAngleThreshold,
+                maxBatchSize = this.maxBatchSize
             };
         }
     }

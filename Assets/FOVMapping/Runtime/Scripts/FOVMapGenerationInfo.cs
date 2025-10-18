@@ -47,5 +47,8 @@ namespace FOVMapping
         
         [Tooltip("(Advanced) Surfaces located below this vertical angle are never considered vertical.")] 
         public float blockedRayAngleThreshold = 0.0f;
+        
+        [Tooltip("(Advanced) Maximum number of raycasts to process in a single batch")] 
+        public int maxBatchSize = 500;
     }
 }
