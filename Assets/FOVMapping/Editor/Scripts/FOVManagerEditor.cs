@@ -9,6 +9,8 @@ namespace FOVMapping
     {
         private SerializedProperty settingsProperty;
         private SerializedProperty fovMapArrayLegacyProperty;
+        private int previewLayer = 0;
+        private bool showPreview = true;
 
         private void OnEnable()
         {
@@ -95,6 +97,56 @@ namespace FOVMapping
                 if (GUILayout.Button("Bake FOV Map", GUILayout.Height(30)))
                 {
                     FOVMapGenerator.BakeFOVMapWithDialog(fovManager.Settings, fovManager.transform);
+                }
+                
+                // Add FOV Map Preview Section
+                EditorGUILayout.Space(10);
+                EditorGUILayout.LabelField("FOV Map Preview", EditorStyles.boldLabel);
+                
+                Texture2DArray fovMapArray = fovManager.Settings.FOVMapArray;
+                if (fovMapArray != null)
+                {
+                    EditorGUILayout.LabelField($"FOV Map: {fovMapArray.width}x{fovMapArray.height}x{fovMapArray.depth}");
+                    EditorGUILayout.LabelField($"Format: {fovMapArray.format}");
+                    EditorGUILayout.LabelField($"Sampling Range: {fovMapArray.mipMapBias}");
+                    
+                    // Layer selection and preview controls
+                    EditorGUILayout.Space(5);
+                    showPreview = EditorGUILayout.Foldout(showPreview, "Texture Array Preview", true);
+                    
+                    if (showPreview && fovMapArray.depth > 0)
+                    {
+                        EditorGUI.indentLevel++;
+                        
+                        // Layer selection
+                        previewLayer = EditorGUILayout.IntSlider("Preview Layer", previewLayer, 0, fovMapArray.depth - 1);
+                        
+                        // Create a preview of the selected layer
+                        EditorGUILayout.Space(5);
+                        EditorGUILayout.LabelField($"Layer {previewLayer} Preview:", EditorStyles.miniLabel);
+                        
+                        // Create a temporary texture for preview
+                        Texture2D previewTexture = new Texture2D(fovMapArray.width, fovMapArray.height, fovMapArray.format, false);
+                        Color[] pixels = fovMapArray.GetPixels(previewLayer, 0);
+                        previewTexture.SetPixels(pixels);
+                        previewTexture.Apply();
+                        
+                        // Display the preview with a reasonable size
+                        int previewSize = Mathf.Min(200, fovMapArray.width, fovMapArray.height);
+                        GUILayout.Box(previewTexture, GUILayout.Width(previewSize), GUILayout.Height(previewSize));
+                        
+                        // Show layer information
+                        EditorGUILayout.LabelField($"Layer {previewLayer}: Direction range {previewLayer * 4}-{(previewLayer + 1) * 4 - 1}", EditorStyles.miniLabel);
+                        
+                        // Clean up
+                        DestroyImmediate(previewTexture);
+                        
+                        EditorGUI.indentLevel--;
+                    }
+                }
+                else
+                {
+                    EditorGUILayout.HelpBox("No FOV Map assigned. Bake a FOV map to see the preview.", MessageType.Info);
                 }
             }
 
