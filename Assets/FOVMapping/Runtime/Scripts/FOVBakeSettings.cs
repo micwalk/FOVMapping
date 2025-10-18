@@ -47,9 +47,6 @@ namespace FOVMapping
         [Tooltip("(Advanced) Surfaces located below this vertical angle are never considered vertical.")] 
         public float blockedRayAngleThreshold = 0.0f;
 
-        [Header("Resolution Settings")]
-        [Tooltip("Size of the fog of war RenderTexture that will be projected with the Plane")]
-        public int FOWTextureSize = 2048;
 
         [Header("Generated Assets")]
         [Tooltip("Generated FOV map Texture2DArray")]

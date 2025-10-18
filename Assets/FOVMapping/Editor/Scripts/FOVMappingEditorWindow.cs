@@ -153,36 +153,7 @@ namespace FOVMapping
         {
             if (settings == null || fovManager == null) return;
 
-            double startTime = Time.realtimeSinceStartup;
-
-            // Create generation info with the FOVManager's transform as the plane
-            FOVMapGenerationInfo generationInfo = settings.ToGenerationInfo(fovManager.transform);
-
-            bool isSuccessful = FOVMapGenerator.CreateFOVMap
-            (
-                generationInfo,
-                (y, height) =>
-                {
-                    return EditorUtility.DisplayCancelableProgressBar("Baking FOV Map", $"Processed {y} / {height} rows", (float)y / height);
-                }
-            );
-
-            EditorUtility.ClearProgressBar();
-
-            double endTime = Time.realtimeSinceStartup;
-            if (isSuccessful)
-            {
-                EditorUtility.DisplayDialog("FOV Map", $"FOV map has been baked successfully in {(int)(endTime - startTime)} seconds ({((endTime - startTime) / 60):F2} minutes)", "OK");
-                
-                // Auto-assign the generated FOV map to settings
-                string assetPath = $"Assets/{settings.path}/{settings.fileName}.asset";
-                Texture2DArray generatedFOVMap = AssetDatabase.LoadAssetAtPath<Texture2DArray>(assetPath);
-                if (generatedFOVMap != null)
-                {
-                    settings.FOVMapArray = generatedFOVMap;
-                    EditorUtility.SetDirty(settings);
-                }
-            }
+            FOVMapGenerator.BakeFOVMapWithDialog(settings, fovManager.transform);
         }
 
     }

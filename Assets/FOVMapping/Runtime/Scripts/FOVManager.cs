@@ -4,6 +4,10 @@ using System.Linq;
 using UnityEngine;
 using FOVMapping;
 using UnityEngine.Rendering;
+using UnityEngine.Serialization;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace FOVMapping
 {
@@ -26,12 +30,19 @@ public class FOVManager : MonoBehaviour
 		get => settings; 
 		set => settings = value; 
 	}
+	
 	// Render Settings
+	[Header("Render Settings")]
 	[SerializeField]
 	[Tooltip("Color of the fog of war")]
 	private Color FOWColor = new Color(0.1f, 0.1f, 0.1f, 0.7f);
 
+	[SerializeField]
+	[Tooltip("Size of the runtime fog of war RenderTexture that will be projected with the Plane")]
+	private int FOWTextureSize = 2048;
+
 	// Runtime Compute Settings
+	[Header("Runtime Compute Settings")]
 	[Range(0, 4096)]
 	[SerializeField]
 	[Tooltip("Maximum number of friendly agents (contributeToFOW == true)")]
@@ -86,7 +97,15 @@ public class FOVManager : MonoBehaviour
 	private Material blurMaterial;
 
 	// Shaders and materials
-	private Texture2DArray FOVMapArray => settings?.FOVMapArray;
+	private Texture2DArray FOVMapArray => settings?.FOVMapArray ?? FOVMapArray_legacy;
+
+	[SerializeField]
+	[Tooltip("(Essential) FOV map Texture2DArray for runtime FOV mapping")]
+	[System.Obsolete("This field is deprecated. Use FOVBakeSettings.FOVMapArray instead for better workflow.")]
+	[FormerlySerializedAs("FOVMapArray")]
+	private Texture2DArray FOVMapArray_legacy;
+
+	public Texture2DArray LegacyFOVMapArray => FOVMapArray_legacy;
 
 	[SerializeField]
 	[Tooltip("(Do not modify) FOV mapping shader")]
@@ -156,7 +175,7 @@ public class FOVManager : MonoBehaviour
 			return;
 		}
 
-		FOWRenderTexture = new RenderTexture(settings.FOWTextureSize, settings.FOWTextureSize, 1, RenderTextureFormat.ARGB32);
+		FOWRenderTexture = new RenderTexture(FOWTextureSize, FOWTextureSize, 1, RenderTextureFormat.ARGB32);
 		FOWMaterial.SetTexture("_MainTex", FOWRenderTexture); // It will be projected using a Plane.
 
 		outputAlphaBuffer = new ComputeBuffer(1, sizeof(float) * maxEnemyAgentCount, ComputeBufferType.IndirectArguments);
@@ -369,7 +388,7 @@ public class FOVManager : MonoBehaviour
 					// Convert the agent position to a Plane UV coordinate [0, FOWTextureSize]
 					Vector3 agentLocalPosition = transform.InverseTransformPoint(agentPosition);
 					Vector2 agentUV = new Vector2(agentLocalPosition.x, agentLocalPosition.z);
-					agentUV *= settings.FOWTextureSize;
+					agentUV *= FOWTextureSize;
 
 					visibilityTargetAgents.Add(agent);
 					targetAgentUVs.Add(agentUV);
@@ -449,5 +468,6 @@ public class FOVManager : MonoBehaviour
 	{
 		FOVAgents.Clear();
 	}
+
 }
 }
