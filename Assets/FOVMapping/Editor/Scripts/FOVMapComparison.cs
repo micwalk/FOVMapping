@@ -155,7 +155,14 @@ namespace FOVMapping
                 
                 EditorGUILayout.BeginVertical("box");
                 resultsScrollPosition = EditorGUILayout.BeginScrollView(resultsScrollPosition, GUILayout.Height(200));
-                EditorGUILayout.SelectableLabel(comparisonResults, EditorStyles.textArea, GUILayout.ExpandHeight(true));
+                
+                // Calculate the height needed for the text
+                GUIStyle textStyle = EditorStyles.textArea;
+                float textHeight = textStyle.CalcHeight(new GUIContent(comparisonResults), EditorGUIUtility.currentViewWidth - 50);
+                
+                // Use a fixed height that will trigger scrolling
+                EditorGUILayout.SelectableLabel(comparisonResults, textStyle, GUILayout.Height(Mathf.Max(200, textHeight)));
+                
                 EditorGUILayout.EndScrollView();
                 EditorGUILayout.EndVertical();
             }

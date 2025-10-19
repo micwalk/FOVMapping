@@ -52,23 +52,65 @@ public static class FOVMapGenerator
 
 		// Use the strategy to generate the FOV map
 		Color[][] mapTexels = strategy.Generate(generationInfo, progressAction);
-		Texture2DArray FOVMapArray = FOVMapGenerator.ColorArrayToTexture2DArray(mapTexels, generationInfo);
-		
-		if (FOVMapArray == null) return false;
-
-		// Store sampling range in mipMapBias field to use in FOVManager
-		FOVMapArray.mipMapBias = generationInfo.samplingRange;
 		
 		// Save the maps to Asset Database (disk)
 		string FOVMapPath = $"Assets/{generationInfo.path}/{generationInfo.fileName}.asset";
+		bool isLinear = (PlayerSettings.colorSpace == ColorSpace.Linear);
+		
 		try
 		{
-			// Load existing asset or create new one
+			// Load existing asset to check if we can reuse it
 			Texture2DArray existingAsset = AssetDatabase.LoadAssetAtPath<Texture2DArray>(FOVMapPath);
-			//TODO: Overwrite existingAsset and avoid full database refresh if possible.
 			
-			AssetDatabase.CreateAsset(FOVMapArray, FOVMapPath);
-			AssetDatabase.Refresh();
+			// Check if we can reuse the existing asset
+			bool canReuse = existingAsset != null &&
+			               existingAsset.width == generationInfo.FOVMapWidth &&
+			               existingAsset.height == generationInfo.FOVMapHeight &&
+			               existingAsset.depth == generationInfo.layerCount &&
+			               existingAsset.format == TextureFormat.RGBA32 &&
+			               existingAsset.isDataSRGB == !isLinear;
+			
+			if (canReuse)
+			{
+				// Reuse existing asset - just update its data
+				for (int layerIdx = 0; layerIdx < generationInfo.layerCount; ++layerIdx)
+				{
+					existingAsset.SetPixels32(ConvertColorsToColor32(mapTexels[layerIdx]), layerIdx, 0);
+				}
+				existingAsset.mipMapBias = generationInfo.samplingRange;
+				existingAsset.Apply();
+				
+				// Mark the asset as dirty and save without full refresh
+				EditorUtility.SetDirty(existingAsset);
+				AssetDatabase.SaveAssets();
+				
+				Debug.Log($"FOVMapGenerator: Updated existing FOV map at {FOVMapPath}");
+			}
+			else
+			{
+				// Need to create new asset (either doesn't exist or dimensions/format changed)
+				if (existingAsset != null)
+				{
+					AssetDatabase.DeleteAsset(FOVMapPath);
+				}
+				
+				// Create new texture array
+				Texture2DArray textureArray = new Texture2DArray(generationInfo.FOVMapWidth, generationInfo.FOVMapHeight, generationInfo.layerCount, TextureFormat.RGBA32, mipChain: false, isLinear);
+				textureArray.filterMode = FilterMode.Bilinear;
+				textureArray.wrapMode = TextureWrapMode.Clamp;
+
+				for (int layerIdx = 0; layerIdx < generationInfo.layerCount; ++layerIdx)
+				{
+					textureArray.SetPixels(mapTexels[layerIdx], layerIdx, 0);
+				}
+				textureArray.mipMapBias = generationInfo.samplingRange;
+				
+				AssetDatabase.CreateAsset(textureArray, FOVMapPath);
+				AssetDatabase.SaveAssets();
+				
+				string reason = existingAsset != null ? " (dimensions/format changed)" : "";
+				Debug.Log($"FOVMapGenerator: Created new FOV map at {FOVMapPath}{reason}");
+			}
 		}
 		catch (Exception e)
 		{
@@ -79,6 +121,22 @@ public static class FOVMapGenerator
 		return true;
 	}
 	
+	// Utility Functions
+
+	/// <summary>
+	/// Converts Color array to Color32 array for efficient texture updates
+	/// </summary>
+	/// <param name="colors">Color array to convert</param>
+	/// <returns>Color32 array</returns>
+	private static Color32[] ConvertColorsToColor32(Color[] colors)
+	{
+		Color32[] color32s = new Color32[colors.Length];
+		for (int i = 0; i < colors.Length; i++)
+		{
+			color32s[i] = colors[i];
+		}
+		return color32s;
+	}
 
 
 	/// <summary>
@@ -185,22 +243,5 @@ public static class FOVMapGenerator
 			EditorUtility.DisplayDialog("FOV Mapping", $"FOV map baking failed after {(int)durationSeconds} seconds ({durationSeconds / 60:F2} minutes). Check the console for details.", "OK");
 		}
 	}
-	
-	// Utility Functions
-	public static Texture2DArray ColorArrayToTexture2DArray(Color[][] mapTexels, FOVMapGenerationInfo generationInfo) {
-		// Store the FOV info in a texture array
-		bool isLinear = (PlayerSettings.colorSpace == ColorSpace.Linear);
-		Texture2DArray textureArray = new Texture2DArray(generationInfo.FOVMapWidth, generationInfo.FOVMapHeight, generationInfo.layerCount, TextureFormat.RGBA32, false, isLinear);
-		textureArray.filterMode = FilterMode.Bilinear;
-		textureArray.wrapMode = TextureWrapMode.Clamp;
-
-		for (int layerIdx = 0; layerIdx < generationInfo.layerCount; ++layerIdx)
-		{
-			textureArray.SetPixels(mapTexels[layerIdx], layerIdx, 0);
-		}
-
-		return textureArray;
-	}
-
 }
 }
