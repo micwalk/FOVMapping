@@ -3,9 +3,21 @@ using FOVMapping;
 
 namespace FOVMapping
 {
+    public enum BakeAlgorithm
+    {
+        [Tooltip("Original single-threaded algorithm - slower but proven correct")]
+        SingleThreaded = 0,
+        [Tooltip("Batched multi-threaded algorithm - faster but may have minor differences")]
+        Batched = 1
+    }
+
     [CreateAssetMenu(fileName = "FOVBakeSettings", menuName = "FOV Mapping/Bake Settings")]
     public class FOVBakeSettings : ScriptableObject
     {
+        [Header("Algorithm Selection")]
+        [Tooltip("Choose which baking algorithm to use")]
+        public BakeAlgorithm bakeAlgorithm = BakeAlgorithm.SingleThreaded;
+
         [Header("FOV Map Generation")]
         [Tooltip("(Essential) Path to save the generated FOV map")] 
         public string path = "FOVMapping/FOVMaps";
@@ -79,7 +91,8 @@ namespace FOVMapping
                 binarySearchCount = this.binarySearchCount,
                 blockingSurfaceAngleThreshold = this.blockingSurfaceAngleThreshold,
                 blockedRayAngleThreshold = this.blockedRayAngleThreshold,
-                maxBatchSize = this.maxBatchSize
+                maxBatchSize = this.maxBatchSize,
+                bakeAlgorithm = this.bakeAlgorithm
             };
         }
     }

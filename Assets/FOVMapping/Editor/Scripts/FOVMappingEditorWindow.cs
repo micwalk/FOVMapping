@@ -153,7 +153,7 @@ namespace FOVMapping
         {
             if (settings == null || fovManager == null) return;
 
-            FOVMapGenerator.BakeFOVMapWithDialog(settings, fovManager.transform);
+            FOVMapGenerator.BakeFOVMapWithDialog(settings, fovManager);
         }
 
     }

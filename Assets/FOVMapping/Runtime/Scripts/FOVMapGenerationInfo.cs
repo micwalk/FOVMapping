@@ -50,5 +50,44 @@ namespace FOVMapping
         
         [Tooltip("(Advanced) Maximum number of raycasts to process in a single batch")] 
         public int maxBatchSize = 500;
+        
+        [Tooltip("Algorithm to use for baking")]
+        public BakeAlgorithm bakeAlgorithm = BakeAlgorithm.SingleThreaded;
+
+        public bool CheckSettings() {
+            bool checkPassed = true;
+            
+            if (plane == null)
+            {
+                Debug.LogError("No FOW plane has been assigned.");
+                checkPassed = false;
+            }
+
+            if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(fileName))
+            {
+                Debug.LogError("Either path or file name have not been assigned.");
+                checkPassed = false;
+            }
+
+            if (FOVMapWidth == 0 || FOVMapHeight == 0)
+            {
+                Debug.LogError("Incorrect texture size.");
+                checkPassed = false;
+            }
+
+            if (samplingRange <= 0.0f)
+            {
+                Debug.LogError("Sampling range must be greater than zero.");
+                checkPassed = false;
+            }
+
+            if (levelLayer == 0)
+            {
+                Debug.LogError("Level layer must be non-zero.");
+                checkPassed = false;
+            }
+
+            return checkPassed;
+        }
     }
 }

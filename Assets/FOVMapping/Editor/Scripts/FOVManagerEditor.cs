@@ -96,7 +96,7 @@ namespace FOVMapping
 
                 if (GUILayout.Button("Bake FOV Map", GUILayout.Height(30)))
                 {
-                    FOVMapGenerator.BakeFOVMapWithDialog(fovManager.Settings, fovManager.transform);
+                    FOVMapGenerator.BakeFOVMapWithDialog(fovManager.Settings, fovManager);
                 }
                 
                 // Add FOV Map Preview Section
