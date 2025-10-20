@@ -38,7 +38,7 @@ namespace FOVMapping
 /// while maintaining the exact behavior of the original algorithm for the complex
 /// direction sampling and binary search phases.
 /// </summary>
-public sealed class SemiBatchedFOVGenerator : IFOVGenerator
+public sealed class FOVGeneratorBatchedRaycasts : IFOVGenerator
 {
     public Color[][] Generate(FOVMapGenerationInfo generationInfo, Func<int, int, bool> progressAction)
     {
@@ -198,7 +198,7 @@ public sealed class SemiBatchedFOVGenerator : IFOVGenerator
             .Select(_ => new Color[generationInfo.FOVMapWidth * generationInfo.FOVMapHeight]).ToArray();
 
         // STAGE 1: BATCHED GROUND HEIGHT DETECTION
-        Debug.Log("SemiBatchedFOVGenerator: Starting Stage 1 - Batched Ground Height Detection");
+        Debug.Log("FOVGeneratorBatchedRaycasts: Starting Stage 1 - BatchedRaycasts Ground Height Detection");
         if (progressAction.Invoke(0, 100)) return null; // 0% - Starting ground detection
 
         GroundHeightData[] groundData = ProcessGroundRaycastsInBatches(generationInfo, progressAction);
@@ -206,7 +206,7 @@ public sealed class SemiBatchedFOVGenerator : IFOVGenerator
         if (progressAction.Invoke(20, 100)) return null; // 20% - Ground detection complete
 
         // STAGE 2 & 3: SINGLE-THREADED DIRECTION SAMPLING AND BINARY SEARCH
-        Debug.Log("SemiBatchedFOVGenerator: Starting Stage 2 & 3 - Single-threaded Direction Sampling and Binary Search");
+        Debug.Log("FOVGeneratorBatchedRaycasts: Starting Stage 2 & 3 - Single-threaded Direction Sampling and Binary Search");
 
         RunDirectionsWavefront(generationInfo, groundData, FOVMapTexels, progressAction);
 
@@ -692,5 +692,5 @@ public sealed class SemiBatchedFOVGenerator : IFOVGenerator
         c[channelIdx] = ratio;
         texels[layerIdx][cell] = c;
     }
-} // End SemiBatchedFOVGenerator
+} // End FOVGeneratorBatchedRaycasts
 } // End namespace

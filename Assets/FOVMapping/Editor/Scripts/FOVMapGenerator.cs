@@ -44,9 +44,8 @@ public static class FOVMapGenerator
 	// Dictionary of strategies for each bake algorithm
 	private static readonly Dictionary<BakeAlgorithm, IFOVGenerator> _strategies = new Dictionary<BakeAlgorithm, IFOVGenerator>
 	{
-		{ BakeAlgorithm.SingleThreaded, new SingleThreadedFOVGenerator() },
-		{ BakeAlgorithm.Batched, new BatchedFOVGenerator() },
-		{ BakeAlgorithm.SemiBatched, new SemiBatchedFOVGenerator() }
+		{ BakeAlgorithm.SingleThreaded, new FOVGeneratorSingleThreaded() },
+		{ BakeAlgorithm.BatchedRaycasts, new FOVGeneratorBatchedRaycasts() },
 	};
 
 	public static bool CreateFOVMap(FOVMapGenerationInfo generationInfo, Func<int, int, bool> progressAction)

@@ -35,7 +35,7 @@ namespace FOVMapping
 /// 
 /// 
 /// </summary>
-public sealed class SingleThreadedFOVGenerator : IFOVGenerator 
+public sealed class FOVGeneratorSingleThreaded : IFOVGenerator 
 {
 	public Color[][] Generate(FOVMapGenerationInfo generationInfo, Func<int, int, bool> progressAction) {
 		return GenerateFOVMap(generationInfo, progressAction);
