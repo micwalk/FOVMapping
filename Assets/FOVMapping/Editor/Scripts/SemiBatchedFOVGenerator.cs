@@ -350,14 +350,60 @@ public sealed class SemiBatchedFOVGenerator : IFOVGenerator
                 //           $"CellQ {readyCells.Count} | Live {LiveCount()} / Cap {activeDirCap} | " +
                 //           $"ActiveListCount {activeDirList.Count} | Free {activeDirFreeSlotIndicies.Count}");
                 
-                int safety = readyCells.Count + 1;
-                while (readyCells.Count > 0 && safety-- > 0)
+                 // how many new actives can we admit right now?
+                int freeLiveBudget = activeDirCap - LiveCount();
+                if (freeLiveBudget <= 0 || readyCells.Count == 0) return;
+
+                // cap by available free slots + append room to avoid extra checks in the loop
+                int appendRoom = Mathf.Max(0, activeDirCap - activeDirList.Count);
+                int freeSlots  = activeDirFreeSlotIndicies.Count;
+                int maxCreatable = Mathf.Min(freeLiveBudget, freeSlots + appendRoom);
+
+                // optional: don’t overfill—emit at most batchSize per wave for stability
+                int target = Mathf.Min(maxCreatable, batchSize);
+
+                for (int i = 0; i < target && readyCells.Count > 0; )
                 {
                     int cell = readyCells.Dequeue();
-                    TryStartForCell(cell);
-                    // If cell can still accept more, round-robin it back
-                    var cur = cursors[cell];
-                    if (cur.nextDir < directionsPerSquare) readyCells.Enqueue(cell);
+                    var cur  = cursors[cell];
+
+                    while (cur.nextDir < directionsPerSquare && i < target)
+                    {
+                        // choose slot: reuse first, append if needed
+                        int slot;
+                        if (activeDirFreeSlotIndicies.Count > 0)
+                        {
+                            slot = activeDirFreeSlotIndicies.Pop();
+                        }
+                        else
+                        {
+                            // guaranteed by maxCreatable that we have append room
+                            slot = activeDirList.Count;
+                            activeDirList.Add(default);
+                        }
+
+                        // init active
+                        var ad = new ActiveDir {
+                            cell = cell,
+                            dir  = cur.nextDir++,
+                            phase = DirPhase.InitSample,
+                            sampleIdx = 0,
+                            bsIter = 0,
+                            obstacleHit = false,
+                            lastHitAngleDeg  = float.NaN,
+                            lastMissAngleDeg = float.NaN,
+                            maxSight = 0f,
+                            alive = true
+                        };
+                        activeDirList[slot] = ad;
+                        i++;
+                    }
+
+                    // if the cell still has work, requeue it (one dir per dequeue keeps fairness)
+                    if (cur.nextDir < directionsPerSquare) {
+                        readyCells.Enqueue(cell);
+                    }
+                    cursors[cell] = cur;
                 }
             }
         }
