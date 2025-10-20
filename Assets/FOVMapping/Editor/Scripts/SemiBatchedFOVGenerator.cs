@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Sirenix.OdinInspector.Editor;
 using Unity.Collections;
@@ -50,92 +51,7 @@ public sealed class SemiBatchedFOVGenerator : IFOVGenerator
         else if (progressPercent <= 95) return "Direction Sampling & Binary Search";
         else return "Creating Texture";
     }
-
-    private static Color[][] GenerateFOVMap_SemiBatched(FOVMapGenerationInfo generationInfo, Func<int, int, bool> progressAction)
-    {
-        // Basic checks
-        bool checkPassed = generationInfo.CheckSettings();
-
-        if (progressAction == null)
-        {
-            Debug.LogError("progressAction must be passed.");
-            checkPassed = false;
-        }
-
-        if (!checkPassed) return null;
-
-        // Set variables and constants
-        const float MAX_HEIGHT = 5000.0f;
-
-        float planeSizeX = generationInfo.plane.localScale.x;
-        float planeSizeZ = generationInfo.plane.localScale.z;
-
-        float squareSizeX = planeSizeX / generationInfo.FOVMapWidth;
-        float squareSizeZ = planeSizeZ / generationInfo.FOVMapHeight;
-
-        int directionsPerSquare = FOVMapGenerator.CHANNELS_PER_TEXEL * generationInfo.layerCount;
-
-        float anglePerDirection = 360.0f / directionsPerSquare;
-        float anglePerSample = generationInfo.samplingAngle / (generationInfo.samplesPerDirection - 1);
-
-        // Create an array of FOV maps
-        Color[][] FOVMapTexels = Enumerable.Range(0, generationInfo.layerCount).Select(_ => new Color[generationInfo.FOVMapWidth * generationInfo.FOVMapHeight]).ToArray();
-
-        // STAGE 1: BATCHED GROUND HEIGHT DETECTION
-        Debug.Log("SemiBatchedFOVGenerator: Starting Stage 1 - Batched Ground Height Detection");
-        if (progressAction.Invoke(0, 100)) return null; // 0% - Starting ground detection
-
-        GroundHeightData[] groundData = ProcessGroundRaycastsInBatches(generationInfo, progressAction);
-
-        if (progressAction.Invoke(20, 100)) return null; // 20% - Ground detection complete
-
-        // STAGE 2 & 3: SINGLE-THREADED DIRECTION SAMPLING AND BINARY SEARCH
-        Debug.Log("SemiBatchedFOVGenerator: Starting Stage 2 & 3 - Single-threaded Direction Sampling and Binary Search");
-
-        for (int squareZ = 0; squareZ < generationInfo.FOVMapHeight; ++squareZ)
-        {
-            for (int squareX = 0; squareX < generationInfo.FOVMapWidth; ++squareX)
-            {
-                GroundHeightData ground = groundData[generationInfo.CellIndex(squareX, squareZ)];
-
-                if (ground.hasGround)
-                {
-                    // For all possible directions at this square
-                    for (int directionIdx = 0; directionIdx < directionsPerSquare; ++directionIdx)
-                    {
-                        // Sample a distance to an obstacle using the proven single-threaded approach
-                        float angleToward = Vector3.SignedAngle(generationInfo.plane.right, Vector3.right, Vector3.up) + directionIdx * anglePerDirection;
-                        
-                        var distanceRatio = FindNearestObstacle(generationInfo, angleToward, anglePerSample, ground.centerPosition);
-
-                        // Find the location to store
-                        int layerIdx = directionIdx / FOVMapGenerator.CHANNELS_PER_TEXEL;
-                        int channelIdx = directionIdx % FOVMapGenerator.CHANNELS_PER_TEXEL;
-
-                        // Store
-                        FOVMapTexels[layerIdx][squareZ * generationInfo.FOVMapWidth + squareX][channelIdx] = distanceRatio;
-                    }
-                }
-                else // No level found
-                {
-                    // Fill all the layers with white
-                    for (int layerIdx = 0; layerIdx < generationInfo.layerCount; ++layerIdx)
-                    {
-                        FOVMapTexels[layerIdx][squareZ * generationInfo.FOVMapWidth + squareX] = Color.white;
-                    }
-                }
-            }
-
-            // Update progress (20% to 95% for direction sampling and binary search)
-            int progressPercent = 20 + (squareZ * 75) / generationInfo.FOVMapHeight;
-            if (progressAction.Invoke(progressPercent, 100)) return null;
-        }
-
-        if (progressAction.Invoke(99, 100)) return null; // 99% - Processing complete
-
-        return FOVMapTexels;
-    }
-
+    
     /// <summary>
     /// Ground height data for a grid cell
     /// </summary>
@@ -251,98 +167,7 @@ public sealed class SemiBatchedFOVGenerator : IFOVGenerator
 
         return groundData;
     }
-
-    /// <summary>
-    /// Find nearest obstacle using the proven single-threaded algorithm
-    /// This is a direct copy from SingleThreadedFOVGenerator to ensure exact compatibility
-    /// </summary>
-    private static float FindNearestObstacle(FOVMapGenerationInfo generationInfo, float angleToward, float anglePerSample, Vector3 centerPosition) 
-    {
-        Vector3 DirectionFromAngle(float angle) {
-            return new Vector3(Mathf.Cos(angle * Mathf.Deg2Rad), 0.0f, Mathf.Sin(angle * Mathf.Deg2Rad));
-        }
-
-        float XZDistance(Vector3 v1, Vector3 v2) {
-            v1.y = 0.0f;
-            v2.y = 0.0f;
-            return Vector3.Distance(v1, v2);
-        }
-        
-        const float RAY_DISTANCE = 1000.0f;
-        
-        // Level-adaptive multisampling
-        float maxSight = 0.0f; // Maximum sight viewed from the center
-
-        Vector3 samplingDirection = DirectionFromAngle(angleToward);
-        float samplingInterval = generationInfo.samplingRange / generationInfo.samplesPerDirection;
-        bool obstacleHit = false;
-        for (int samplingIdx = 0; samplingIdx < generationInfo.samplesPerDirection; ++samplingIdx)
-        {
-            // For each vertical angle
-            float samplingAngle = -generationInfo.samplingAngle / 2.0f + samplingIdx * anglePerSample;
-
-            // Apply the sampling angle
-            Vector3 samplingLine = samplingDirection;
-            samplingLine.y = samplingLine.magnitude * Mathf.Tan(samplingAngle * Mathf.Deg2Rad);
-
-            // Update max sight
-            RaycastHit hitBlocked;
-            if (Physics.Raycast(centerPosition, samplingLine, out hitBlocked, RAY_DISTANCE, generationInfo.levelLayer)) // Blocking level exists
-            {
-                obstacleHit = true;
-                float blockedDistance = XZDistance(centerPosition, hitBlocked.point);
-                if (blockedDistance > maxSight)
-                {
-                    maxSight = Mathf.Clamp(blockedDistance, 0.0f, generationInfo.samplingRange);
-                }
-
-                // If the surface is almost vertical and high enough, stop sampling here
-                if (Vector3.Angle(hitBlocked.normal, Vector3.up) >= generationInfo.blockingSurfaceAngleThreshold && samplingAngle >= generationInfo.blockedRayAngleThreshold)
-                {
-                    break;
-                }
-            }
-            else if (samplingIdx <= (generationInfo.samplesPerDirection + 2 - 1) / 2) // No hit below the eye line yields a maximum sight
-            {
-                maxSight = generationInfo.samplingRange;
-            }
-            else if (obstacleHit) // Previous ray hit an obstacle, but this one hasn't
-            {
-                // Binary search to find an edge
-                float angularInterval = anglePerSample / 2.0f;
-                float searchingAngle = samplingAngle - angularInterval;
-                for (int i = 0; i < generationInfo.binarySearchCount; ++i)
-                {
-                    angularInterval /= 2.0f;
-
-                    Vector3 searchingLine = samplingDirection;
-                    searchingLine.y = searchingLine.magnitude * Mathf.Tan(searchingAngle * Mathf.Deg2Rad);
-
-                    RaycastHit hitSearched;
-                    if (Physics.Raycast(centerPosition, searchingLine, out hitSearched, RAY_DISTANCE, generationInfo.levelLayer))
-                    {
-                        searchingAngle = searchingAngle + angularInterval; // Next range is the upper half
-
-                        // Update maxSight
-                        float searchedDistance = XZDistance(centerPosition, hitSearched.point);
-                        if (searchedDistance >= maxSight)
-                        {
-                            maxSight = Mathf.Clamp(searchedDistance, 0.0f, generationInfo.samplingRange);
-                        }
-                    }
-                    else
-                    {
-                        searchingAngle = searchingAngle - angularInterval; // Next range is the lower half
-                    }
-                }
-
-                break;
-            }
-        }
-        float distanceRatio = maxSight == 0.0f ? 1.0f : maxSight / generationInfo.samplingRange;
-        return distanceRatio;
-    }
-
+    
     private static Color[][] GenerateFOVMap_Wavefront(FOVMapGenerationInfo generationInfo, Func<int, int, bool> progressAction) {
         // Basic checks
         bool checkPassed = generationInfo.CheckSettings();
@@ -390,15 +215,25 @@ public sealed class SemiBatchedFOVGenerator : IFOVGenerator
 
     enum DirPhase : byte { InitSample, Sampling, BinarySearch, Done }
 
-    struct DirState
+    // --- Packed, per-active-direction state (small; only for currently working dirs) ---
+    struct ActiveDir
     {
-        public DirPhase phase;
-        public int sampleIdx;
-        public bool obstacleHit;
-        public float lastHitAngle;    // deg
-        public float lastMissAngle;   // deg
-        public int bsIter;
-        public float maxSight;        // world XZ distance (clamped later)
+        public int cell;                 // cell index
+        public int dir;                  // 0..directionsPerSquare-1
+        public DirPhase phase;           // InitSample/Sampling/BinarySearch/Done
+        public int sampleIdx;            // current vertical sample index
+        public int bsIter;               // binary-search iteration
+        public bool obstacleHit;         // saw a hit previously
+        public float lastHitAngleDeg;    // last hit vertical angle (deg)
+        public float lastMissAngleDeg;   // last miss vertical angle (deg)
+        public float maxSight;           // best XZ distance so far (clamped later)
+        public bool alive;               // false => slot reusable
+    }
+    
+    
+    struct CellCursor
+    {
+        public int nextDir;              // next direction to start for this cell
     }
 
     static Vector3 DirectionFromAngleDeg(float angleDeg)
@@ -413,326 +248,390 @@ public sealed class SemiBatchedFOVGenerator : IFOVGenerator
         return Vector3.Distance(a, b);
     }
 
-    
-// Markers
+    // Profiler Markers
     static readonly ProfilerMarker kWaveLoop    = new("FOV/WaveLoop");
+    static readonly ProfilerMarker kTopUp      = new("FOV/TopUp");
     static readonly ProfilerMarker kGather      = new("FOV/Gather");
     static readonly ProfilerMarker kRaycast    = new("FOV/Raycast");
     static readonly ProfilerMarker kConsume     = new("FOV/Consume");
 
-// // Counters (appear in Profiler Counters panel)
-//     static ProfilerCounter<int> cWave        = new(ProfilerCategory.Scripts, "FOV/Wave Index", ProfilerMarkerDataUnit.Count);
-//     static ProfilerCounter<int> cEmitted     = new(ProfilerCategory.Scripts, "FOV/Rays Emitted This Wave", ProfilerMarkerDataUnit.Count);
-//     static ProfilerCounter<int> cDone        = new(ProfilerCategory.Scripts, "FOV/Dirs Done", ProfilerMarkerDataUnit.Count);
-//     static ProfilerCounter<int> cFillRatioPct= new(ProfilerCategory.Scripts, "FOV/Batch Fill %", ProfilerMarkerDataUnit.Percent);
-//
-// // optional: split sampling vs binary counts
-//     static ProfilerCounter<int> cSamplingQ   = new(ProfilerCategory.Scripts, "FOV/Sampling Pending", ProfilerMarkerDataUnit.Count);
-//     static ProfilerCounter<int> cBinaryQ     = new(ProfilerCategory.Scripts, "FOV/Binary Pending", ProfilerMarkerDataUnit.Count);
     static void RunDirectionsWavefront(FOVMapGenerationInfo g, GroundHeightData[] ground, Color[][] FOVMapTexels, Func<int,int,bool> progressAction)
     {
         int cells  = g.CellCount;
-
         int directionsPerSquare = FOVMapGenerator.CHANNELS_PER_TEXEL * g.layerCount;
         float anglePerDirection = 360f / directionsPerSquare;
         float anglePerSample    = g.samplingAngle / (g.samplesPerDirection - 1);
         const float RAY_DISTANCE = 1000f;
 
-        // Per (cell,dir) state
-        var dirStates = new DirState[cells * directionsPerSquare];
-
-        // Initialize phases (skip cells without ground)
-        for (int cell = 0; cell < cells; cell++)
+        
+        // Precompute base horizontal vectors (unit)
+        float planeRightYaw = Vector3.SignedAngle(g.plane.right, Vector3.right, Vector3.up);
+        var baseDirVec = new Vector3[directionsPerSquare];
+        for (int d = 0; d < directionsPerSquare; d++)
         {
-            bool hasGround = ground[cell].hasGround;
-            for (int d = 0; d < directionsPerSquare; d++)
+            float yaw = planeRightYaw + d * anglePerDirection;
+            baseDirVec[d] = DirectionFromAngleDeg(yaw); // unit-length XZ
+        }
+        
+        
+        // Per-cell cursors + ready queue (only cells with ground participate)
+        var cursors = new CellCursor[cells];
+        var readyCells = new Queue<int>(Mathf.Min(cells, 1 << 16));
+        int totalDirs = 0;
+        int cellsWithGround = 0;
+        for (int c = 0; c < cells; c++)
+        {
+            if (!ground[c].hasGround) continue;
+
+            cellsWithGround++;
+            cursors[c] = new CellCursor { nextDir = 0 };
+            readyCells.Enqueue(c);
+            totalDirs += directionsPerSquare;
+        }
+        
+        Debug.Log($"RunDirectionsWavefront Prep: Cell Count: {cells}, ready cells: {readyCells.Count}. Cells with Ground: {cellsWithGround}. Total Directions with Ground: {totalDirs}");
+
+        // Early out: no ground anywhere
+        if (totalDirs == 0)
+        {
+            Debug.LogWarning($"RunDirectionsWavefront EARLY OUT -- No Directions recorded.");
+            // fill white
+            for (int cell = 0; cell < cells; cell++)
+            for (int layer = 0; layer < g.layerCount; layer++)
+                FOVMapTexels[layer][cell] = Color.white;
+            return;
+        }
+
+        // Active pool (bounded) + free list to reuse slots
+        int batchSize = Mathf.Max(1, g.maxBatchSize);
+        int activeDirCap   = Mathf.Clamp(batchSize * 8, batchSize, Mathf.Min(totalDirs, batchSize * 32)); // headroom
+        var activeDirList      = new List<ActiveDir>(activeDirCap);
+        var activeDirFreeSlotIndicies = new Stack<int>(activeDirCap);
+
+        // Prealloc physics buffers
+        var cmdBuffer       = new NativeArray<RaycastCommand>(batchSize, Allocator.TempJob);
+        var hitResultBuffer = new NativeArray<RaycastHit>(batchSize, Allocator.TempJob);
+        var mapBackPoolIdx  = new NativeArray<int>(batchSize, Allocator.TempJob); // pool index per emitted ray
+
+        int LiveCount() => activeDirList.Count - activeDirFreeSlotIndicies.Count;
+
+        // Helper: start new directions for a cell up to capacity
+        const int K_PER_CELL = 2; // max concurrent directions per cell (tune)
+        void TryStartForCell(int cell)
+        {
+            ref var cur = ref cursors[cell];
+            while ((activeDirFreeSlotIndicies.Count > 0 || activeDirList.Count < activeDirCap) && cur.nextDir < directionsPerSquare)
             {
-                int idx = cell * directionsPerSquare + d;
-                ref var st = ref dirStates[idx];
-                if (!hasGround)
+                int dir = cur.nextDir++;
+                int slot = activeDirFreeSlotIndicies.Count > 0 ? activeDirFreeSlotIndicies.Pop() : activeDirList.Count;
+                if (slot == activeDirList.Count) activeDirList.Add(default);
+                activeDirList[slot] = new ActiveDir
                 {
-                    st.phase = DirPhase.Done; // will fill white later
-                }
-                else
+                    cell = cell,
+                    dir = dir,
+                    phase = DirPhase.InitSample,
+                    sampleIdx = 0,
+                    bsIter = 0,
+                    obstacleHit = false,
+                    lastHitAngleDeg = float.NaN,
+                    lastMissAngleDeg = float.NaN,
+                    maxSight = 0f,
+                    alive = true
+                };
+            }
+        }
+
+        // Top-up: keep pool saturated using the readyCells queue
+        void TopUpPool()
+        {
+            using (kTopUp.Auto())
+            {
+                // Debug.Log($"TopUpPool:" +
+                //           $"CellQ {readyCells.Count} | Live {LiveCount()} / Cap {activeDirCap} | " +
+                //           $"ActiveListCount {activeDirList.Count} | Free {activeDirFreeSlotIndicies.Count}");
+                
+                int safety = readyCells.Count + 1;
+                while (readyCells.Count > 0 && safety-- > 0)
                 {
-                    st.phase = DirPhase.InitSample;
-                    st.sampleIdx = 0;
-                    st.obstacleHit = false;
-                    st.maxSight = 0f;
-                    st.bsIter = 0;
-                    st.lastHitAngle = float.NaN;
-                    st.lastMissAngle = float.NaN;
+                    int cell = readyCells.Dequeue();
+                    TryStartForCell(cell);
+                    // If cell can still accept more, round-robin it back
+                    var cur = cursors[cell];
+                    if (cur.nextDir < directionsPerSquare) readyCells.Enqueue(cell);
                 }
             }
         }
 
-        // Precompute base horizontal angle per direction (world-aligned)
-        var baseDirAngle = new float[directionsPerSquare];
-        float planeRightYaw = Vector3.SignedAngle(g.plane.right, Vector3.right, Vector3.up);
-        for (int d = 0; d < directionsPerSquare; d++)
-            baseDirAngle[d] = planeRightYaw + d * anglePerDirection;
-
-        // Wave loop
         int doneCount = 0;
         int wave = 0;
-        int totalDirs = cells * directionsPerSquare;
 
-        // (Optional) chunking to keep Editor responsive
-        int batchSize = Mathf.Max(1, g.maxBatchSize);
-
-        var cmdBuffer  = new NativeArray<RaycastCommand>(batchSize, Allocator.TempJob);
-        var mapBack    = new NativeArray<(int cell, int dir, byte tag)> (batchSize, Allocator.TempJob); // tag: 0=sample,1=binsearch,255=Filler
-        var hitResultBuffer = new NativeArray<RaycastHit>(batchSize, Allocator.TempJob);
-
-        while (doneCount < totalDirs) {
+        while (doneCount < totalDirs)
+        {
             kWaveLoop.Begin();
-            int bufferIndex = 0;
-            
-            kGather.Begin();
-            // 1) Gather: emit at most one ray per active (cell,dir) this wave.
-            for (int cell = 0; cell < cells && bufferIndex < cmdBuffer.Length; cell++)
+
+            // Keep enough actives to fill a batch (or as many as possible)
+            TopUpPool();
+
+            // 1) Gather from pool: at most one ray per active direction this wave
+            int thisBatchCount = 0;
+            using (kGather.Auto())
             {
-                if (!ground[cell].hasGround) continue;
-                Vector3 center = ground[cell].centerPosition;
+                // Debug.Log($"Wave{wave} GATHER Begin: Done {doneCount}/{totalDirs} | " +
+                //           $"CellQ {readyCells.Count} | Live {LiveCount()} / Cap {activeDirCap} | " +
+                //           $"ActiveListCount {activeDirList.Count} | Free {activeDirFreeSlotIndicies.Count}");
 
-                for (int d = 0; d < directionsPerSquare && bufferIndex < cmdBuffer.Length; d++)
+                for (int p = 0; p < activeDirList.Count && thisBatchCount < batchSize; p++)
                 {
-                    int idx = cell * directionsPerSquare + d;
-                    ref var st = ref dirStates[idx];
-                    if (st.phase == DirPhase.Done) continue;
+                    var ad = activeDirList[p];
+                    if (!ad.alive || ad.phase == DirPhase.Done) continue;
 
-                    // Horizontal toward vector
-                    float baseYaw = baseDirAngle[d];
-                    Vector3 samplingDir = DirectionFromAngleDeg(baseYaw);
-
-                    // Decide which vertical angle we’re casting this wave
-                    switch (st.phase)
+                    // choose vertical angle
+                    float vDeg;
+                    if (ad.phase == DirPhase.BinarySearch)
                     {
-                        case DirPhase.InitSample:
-                        case DirPhase.Sampling:
+                        vDeg = 0.5f * (ad.lastHitAngleDeg + ad.lastMissAngleDeg);
+                    }
+                    else // InitSample/Sampling
+                    {
+                        vDeg = -g.samplingAngle / 2f + ad.sampleIdx * anglePerSample;
+                        ad.phase = DirPhase.Sampling; // ensure sampling after first emission
+                        activeDirList[p] = ad; // write back phase change
+                    }
+
+                    Vector3 rayDir = baseDirVec[ad.dir];
+                    rayDir.y = Mathf.Tan(vDeg * Mathf.Deg2Rad);
+                    rayDir.Normalize(); // required by RaycastCommand
+
+                    var origin = ground[ad.cell].centerPosition;
+
+                    cmdBuffer[thisBatchCount] = new RaycastCommand
+                    {
+                        from = origin,
+                        direction = rayDir,
+                        distance = RAY_DISTANCE,
+                        queryParameters = new QueryParameters
                         {
-                            // same logic as your single-threaded loop
-                            float samplingAngle = -g.samplingAngle / 2f + st.sampleIdx * anglePerSample;
-                            Vector3 rayDir = samplingDir;
-                            rayDir.y = rayDir.magnitude * Mathf.Tan(samplingAngle * Mathf.Deg2Rad);
-
-                            var cmd = new RaycastCommand
-                            {
-                                from = center,
-                                direction = rayDir.normalized,
-                                distance = RAY_DISTANCE,
-                                queryParameters = new QueryParameters
-                                {
-                                    layerMask = g.levelLayer,
-                                    hitTriggers = QueryTriggerInteraction.Ignore
-                                }
-                            };
-                            cmdBuffer[bufferIndex] = cmd;
-                            mapBack[bufferIndex] = (cell, d, 0); //0=sampling
-                            bufferIndex++;
-                            st.phase = DirPhase.Sampling; // ensure we mark it as sampling
-                            break;
+                            layerMask = g.levelLayer,
+                            hitTriggers = QueryTriggerInteraction.Ignore
                         }
+                    };
+                    
+                    mapBackPoolIdx[thisBatchCount] = p; // map back to pool entry
+                    thisBatchCount++;
+                }
 
-                        case DirPhase.BinarySearch:
+                // If count == 0 here, we ran out of actives before finishing;
+                // try to top up again (e.g., when K_PER_CELL is small)
+                if (thisBatchCount == 0)
+                {
+                    TopUpPool();
+                    for (int p = 0; p < activeDirList.Count && thisBatchCount < batchSize; p++)
+                    {
+                        var ad = activeDirList[p];
+                        if (!ad.alive || ad.phase == DirPhase.Done) continue;
+                        float vDeg = (ad.phase == DirPhase.BinarySearch)
+                            ? 0.5f * (ad.lastHitAngleDeg + ad.lastMissAngleDeg)
+                            : (-g.samplingAngle / 2f + ad.sampleIdx * anglePerSample);
+
+                        Vector3 rayDir = baseDirVec[ad.dir];
+                        rayDir.y = Mathf.Tan(vDeg * Mathf.Deg2Rad);
+                        rayDir.Normalize();
+
+                        var origin = ground[ad.cell].centerPosition;
+
+                        cmdBuffer[thisBatchCount] = new RaycastCommand
                         {
-                            // midpoint between last hit/miss
-                            float searchAngle = 0.5f * (st.lastHitAngle + st.lastMissAngle);
-                            Vector3 rayDir = samplingDir;
-                            rayDir.y = rayDir.magnitude * Mathf.Tan(searchAngle * Mathf.Deg2Rad);
-
-                            var cmd = new RaycastCommand
+                            from = origin,
+                            direction = rayDir,
+                            distance = RAY_DISTANCE,
+                            queryParameters = new QueryParameters
                             {
-                                from = center,
-                                direction = rayDir.normalized,
-                                distance = RAY_DISTANCE,
-                                queryParameters = new QueryParameters
-                                {
-                                    layerMask = g.levelLayer,
-                                    hitTriggers = QueryTriggerInteraction.Ignore
-                                }
-                            };
-                            cmdBuffer[bufferIndex] = cmd;
-                            mapBack[bufferIndex] = (cell, d, 1); //1 = binsearch
-                            bufferIndex++;
-                            break;
-                        }
+                                layerMask = g.levelLayer,
+                                hitTriggers = QueryTriggerInteraction.Ignore
+                            }
+                        };
+
+                        mapBackPoolIdx[thisBatchCount] = p;
+                        // ensure sampling tag after first emission
+                        if (ad.phase == DirPhase.InitSample) { ad.phase = DirPhase.Sampling; activeDirList[p] = ad; }
+                        thisBatchCount++;
                     }
                 }
             }
-            
 
-            // If no rays emitted this wave, finalize remaining directions (e.g., empty cells)
-            if (bufferIndex == 0)
+            // Nothing to cast? Finalize blanks and break.
+            if (thisBatchCount == 0)
             {
-                // finalize any lingering states that need it
-                for (int cell = 0; cell < cells; cell++)
+                // fill white for any cells without ground (already handled by not scheduling them)
+                // write remaining active entries (shouldn't happen but safe-guard)
+                int notDoneCount = 0;
+                for (int p = 0; p < activeDirList.Count; p++)
                 {
-                    if (!ground[cell].hasGround)
-                    {
-                        // fill white
-                        for (int layer = 0; layer < g.layerCount; layer++)
-                            FOVMapTexels[layer][cell] = Color.white;
+                    var ad = activeDirList[p];
+                    if (!ad.alive || ad.phase == DirPhase.Done) continue;
+                    WriteChannel(g, FOVMapTexels, ad.cell, ad.dir, ad.maxSight, g.samplingRange);
+                    if (ad.phase != DirPhase.Done) {
+                        notDoneCount++;
+                        ad.phase = DirPhase.Done;
                     }
-                    else
-                    {
-                        for (int d = 0; d < directionsPerSquare; d++)
-                        {
-                            int idx = cell * directionsPerSquare + d;
-                            ref var st = ref dirStates[idx];
-                            if (st.phase != DirPhase.Done)
-                            {
-                                // if we somehow didn’t finish, assume maxSight==0 → white channel
-                                WriteChannel(g, FOVMapTexels, cell, d, st.maxSight, g.samplingRange);
-                                st.phase = DirPhase.Done;
-                                doneCount++;
-                            }
-                        }
-                    }
+                    ad.alive = false; 
+                    activeDirFreeSlotIndicies.Push(p);
+                    activeDirList[p] = ad;
+                    doneCount++;
                 }
+                Debug.LogError($"Wave{wave} GATHER EXIT (Starved Work QUEUE). thisBatchCount == 0. NotDone? {notDoneCount}. ActiveList: {activeDirList.Count} / {activeDirCap}. FreeSlotCount: {activeDirFreeSlotIndicies.Count}");
+                kWaveLoop.End();
                 break;
             }
-            kGather.End();
 
-            
-            // 2) Execute Batch
-            kRaycast.Begin();
-            //First, if we didn't fill the whole array, fill with default commands
-            int thisBatchSize = bufferIndex;
-            while (bufferIndex < cmdBuffer.Length) {
-                cmdBuffer[bufferIndex] = new RaycastCommand();
-                mapBack[bufferIndex] = (-1, -1, 255);
-                bufferIndex++;
-                    
-            }
-            
-            var handle = RaycastCommand.ScheduleBatch(cmdBuffer, hitResultBuffer, 1);
-            handle.Complete();
-            kRaycast.End();
-            
-            // 3) Consume
-            kConsume.Begin();
-            for (int i = 0; i < thisBatchSize; i++)
+            // 2) Physics
+            using (kRaycast.Auto())
             {
-                var (cell, d, tag) = mapBack[i];
-                if(tag == 255) continue; // Though, this shouldnt happen.
-                int idx = cell * directionsPerSquare + d;
-                ref var st = ref dirStates[idx];
+                // Debug.Log($"Wave{wave} RAYCAST Dispatch: Active Dirs: {activeDirList.Count} This batch Size: {thisBatchCount} / {batchSize} ({(100*(float)(thisBatchCount / batchSize))}%) fill rate");
+                
+                // zero-pad the tail to speed up unused batch raycast slots
+                for (int i = thisBatchCount; i < cmdBuffer.Length; i++) cmdBuffer[i] = new RaycastCommand();
 
-                Vector3 center = ground[cell].centerPosition;
-                RaycastHit hit = hitResultBuffer[i];
+                var handle = RaycastCommand.ScheduleBatch(cmdBuffer, hitResultBuffer, minCommandsPerJob: 8);
+                handle.Complete();
+            }
 
-                if (tag == 0) // Sampling phase
+            // 3) Consume back into pool entries
+            using (kConsume.Auto())
+            {
+                for (int i = 0; i < thisBatchCount; i++)
                 {
-                    float samplingAngle = -g.samplingAngle / 2f + st.sampleIdx * anglePerSample;
+                    int p = mapBackPoolIdx[i];
+                    var ad = activeDirList[p];
+                    if (!ad.alive) continue; // might have been finalized earlier
 
-                    if (hit.collider != null)
+                    Vector3 center = ground[ad.cell].centerPosition;
+                    RaycastHit hit = hitResultBuffer[i];
+
+                    if (ad.phase == DirPhase.Sampling || ad.phase == DirPhase.InitSample)
                     {
-                        st.obstacleHit = true;
-                        float blocked = XZDistance(center, hit.point);
-                        if (blocked > st.maxSight)
-                            st.maxSight = Mathf.Clamp(blocked, 0f, g.samplingRange);
+                        float samplingAngle = -g.samplingAngle / 2f + ad.sampleIdx * anglePerSample;
 
-                        // vertical/steep check
-                        if (Vector3.Angle(hit.normal, Vector3.up) >= g.blockingSurfaceAngleThreshold &&
-                            samplingAngle >= g.blockedRayAngleThreshold)
+                        if (hit.collider != null)
                         {
-                            FinalizeDirection(g, FOVMapTexels, cell, d, ref st); doneCount++;
-                            continue;
+                            ad.obstacleHit = true;
+                            float blocked = XZDistance(center, hit.point);
+                            if (blocked > ad.maxSight) ad.maxSight = Mathf.Clamp(blocked, 0f, g.samplingRange);
+
+                            // steep surface -> finalize
+                            if (Vector3.Angle(hit.normal, Vector3.up) >= g.blockingSurfaceAngleThreshold &&
+                                samplingAngle >= g.blockedRayAngleThreshold)
+                            {
+                                WriteChannel(g, FOVMapTexels, ad.cell, ad.dir, ad.maxSight, g.samplingRange);
+                                ad.alive = false; ad.phase = DirPhase.Done;
+                                activeDirList[p] = ad;
+                                activeDirFreeSlotIndicies.Push(p);
+                                doneCount++;
+                                continue;
+                            }
+
+                            ad.lastHitAngleDeg = samplingAngle;
+                        }
+                        else
+                        {
+                            // below eye-line miss => max sight
+                            if (ad.sampleIdx <= (g.samplesPerDirection + 2 - 1) / 2)
+                            {
+                                ad.maxSight = g.samplingRange;
+                                WriteChannel(g, FOVMapTexels, ad.cell, ad.dir, ad.maxSight, g.samplingRange);
+                                ad.alive = false; ad.phase = DirPhase.Done;
+                                activeDirList[p] = ad;
+                                activeDirFreeSlotIndicies.Push(p);
+                                doneCount++;
+                                continue;
+                            }
+
+                            // transition to binary (hit then miss)
+                            if (ad.obstacleHit && !float.IsNaN(ad.lastHitAngleDeg))
+                            {
+                                ad.lastMissAngleDeg = samplingAngle;
+                                ad.phase = DirPhase.BinarySearch;
+                                ad.bsIter = 0;
+                                activeDirList[p] = ad;
+                                continue;
+                            }
                         }
 
-                        // prepare for potential binary search if next higher sample misses
-                        st.lastHitAngle = samplingAngle;
-                    }
-                    else
-                    {
-                        // special case: any sample below eye-line misses implies max sight
-                        if (st.sampleIdx <= (g.samplesPerDirection + 2 - 1) / 2)
+                        // advance sampling
+                        ad.sampleIdx++;
+                        if (ad.sampleIdx >= g.samplesPerDirection)
                         {
-                            st.maxSight = g.samplingRange;
-                            FinalizeDirection(g, FOVMapTexels, cell, d, ref st); doneCount++;
-                            continue;
+                            WriteChannel(g, FOVMapTexels, ad.cell, ad.dir, ad.maxSight, g.samplingRange);
+                            ad.alive = false; ad.phase = DirPhase.Done;
+                            activeDirList[p] = ad;
+                            activeDirFreeSlotIndicies.Push(p);
+                            doneCount++;
                         }
-
-                        // if we had a prior hit and now miss, enter binary search
-                        if (st.obstacleHit && !float.IsNaN(st.lastHitAngle))
+                        else
                         {
-                            st.lastMissAngle = samplingAngle;
-                            st.phase = DirPhase.BinarySearch;
-                            st.bsIter = 0;
-                            continue;
+                            activeDirList[p] = ad;
                         }
                     }
-
-                    // advance to next sample if still sampling
-                    if (st.phase == DirPhase.Sampling)
+                    else // BinarySearch
                     {
-                        st.sampleIdx++;
-                        if (st.sampleIdx >= g.samplesPerDirection)
+                        float searchAngle = 0.5f * (ad.lastHitAngleDeg + ad.lastMissAngleDeg);
+
+                        if (hit.collider != null)
                         {
-                            // no binary search needed; finalize with whatever maxSight we have
-                            FinalizeDirection(g, FOVMapTexels, cell, d, ref st); doneCount++;
+                            ad.lastHitAngleDeg = searchAngle;
+                            float dist = XZDistance(center, hit.point);
+                            if (dist > ad.maxSight) ad.maxSight = Mathf.Clamp(dist, 0f, g.samplingRange);
                         }
-                    }
-                }
-                else // Binary search phase
-                {
-                    float searchAngle = 0.5f * (st.lastHitAngle + st.lastMissAngle);
+                        else
+                        {
+                            ad.lastMissAngleDeg = searchAngle;
+                        }
 
-                    if (hit.collider != null)
-                    {
-                        // move split upward
-                        st.lastHitAngle = searchAngle;
-                        float dist = XZDistance(center, hit.point);
-                        if (dist > st.maxSight)
-                            st.maxSight = Mathf.Clamp(dist, 0f, g.samplingRange);
-                    }
-                    else
-                    {
-                        // move split downward
-                        st.lastMissAngle = searchAngle;
-                    }
-
-                    st.bsIter++;
-                    if (st.bsIter >= g.binarySearchCount)
-                    {
-                        FinalizeDirection(g, FOVMapTexels, cell, d, ref st); doneCount++;
+                        ad.bsIter++;
+                        if (ad.bsIter >= g.binarySearchCount)
+                        {
+                            WriteChannel(g, FOVMapTexels, ad.cell, ad.dir, ad.maxSight, g.samplingRange);
+                            ad.alive = false; ad.phase = DirPhase.Done;
+                            activeDirList[p] = ad;
+                            activeDirFreeSlotIndicies.Push(p);
+                            doneCount++;
+                        }
+                        else
+                        {
+                            activeDirList[p] = ad;
+                        }
                     }
                 }
             }
-            kConsume.End();
 
             // Progress (map 20%..95%)
             int pct = 20 + Mathf.RoundToInt(75f * (doneCount / (float)totalDirs));
-            if (progressAction.Invoke(Mathf.Clamp(pct, 20, 95), 100)) 
+            
+            if (progressAction.Invoke(Mathf.Clamp(pct, 20, 95), 100))
             {
+                Debug.LogError($"RunDirectionsWavefront Aborted @ Wave {wave}: Cells: {cells} | CellQ: {readyCells} | DoneCount: {doneCount} | TotalDirs: {totalDirs} | CellsWithGround: {cellsWithGround}");
                 kWaveLoop.End();
                 break;
             }
 
             wave++;
-            
-            // Debug.Log($"Finished wave {wave}. Finished {doneCount} of {totalDirs} total directions");
-            // (Optional) yield a frame here if you want editor responsiveness:
-            // EditorApplication.QueuePlayerLoopUpdate();  // or await/yield elsewhere
-             
-             kWaveLoop.End();
+            kWaveLoop.End();
         }
         
-        // Release memory
-        cmdBuffer.Dispose();
-        mapBack.Dispose();
-        hitResultBuffer.Dispose();
-        
-        //No return -- FOVMapTexels has been updated
-    }
+        // Cells without ground → white (if any such cells exist)
+        for (int cell = 0; cell < cells; cell++)
+        {
+            if (ground[cell].hasGround) continue;
+            for (int layer = 0; layer < g.layerCount; layer++)
+                FOVMapTexels[layer][cell] = Color.white;
+        }
 
-    static void FinalizeDirection(
-        FOVMapGenerationInfo g, Color[][] texels, int cell, int d,
-        ref DirState st)
-    {
-        WriteChannel(g, texels, cell, d, st.maxSight, g.samplingRange);
-        st.phase = DirPhase.Done;
+        // Cleanup
+        cmdBuffer.Dispose();
+        hitResultBuffer.Dispose();
+        mapBackPoolIdx.Dispose();
+        
+        Debug.Log($"RunDirectionsWavefront Finished Loop: Cells: {cells} | WaveCount: {wave} | DoneCount: {doneCount} | TotalDirs: {totalDirs} | CellsWithGround: {cellsWithGround}");
     }
 
     static void WriteChannel(
@@ -747,6 +646,5 @@ public sealed class SemiBatchedFOVGenerator : IFOVGenerator
         c[channelIdx] = ratio;
         texels[layerIdx][cell] = c;
     }
-
-}
-}
+} // End SemiBatchedFOVGenerator
+} // End namespace
