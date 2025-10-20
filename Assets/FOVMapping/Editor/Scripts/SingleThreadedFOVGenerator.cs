@@ -41,6 +41,11 @@ public sealed class SingleThreadedFOVGenerator : IFOVGenerator
 		return GenerateFOVMap(generationInfo, progressAction);
 	}
 	
+	public string GetProgressStage(int progressPercent)
+	{
+		return "Processing";
+	}
+	
 	private static Color[][] GenerateFOVMap(FOVMapGenerationInfo generationInfo, Func<int, int, bool> progressAction)
 	{
 		// Basic checks

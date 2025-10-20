@@ -89,5 +89,8 @@ namespace FOVMapping
 
             return checkPassed;
         }
+
+        public int CellCount => FOVMapWidth * FOVMapHeight;
+        public int CellIndex(int squareX, int squareZ) => squareZ * FOVMapWidth + squareX;
     }
 }

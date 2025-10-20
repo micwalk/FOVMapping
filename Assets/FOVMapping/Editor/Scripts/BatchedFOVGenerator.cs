@@ -22,6 +22,14 @@ public sealed class BatchedFOVGenerator : IFOVGenerator
     {
         return GenerateFOVMap_Batched(generationInfo, progressAction);
     }
+    
+    public string GetProgressStage(int progressPercent)
+    {
+        if (progressPercent <= 20) return "Ground Detection";
+        else if (progressPercent <= 70) return "Direction Sampling";
+        else if (progressPercent <= 95) return "Binary Search Refinement";
+        else return "Creating Texture";
+    }
 
     private static Color[][] GenerateFOVMap_Batched(FOVMapGenerationInfo generationInfo, Func<int, int, bool> progressAction)
     {
@@ -40,7 +48,7 @@ public sealed class BatchedFOVGenerator : IFOVGenerator
         Debug.Log("FOVMapGenerator: Starting Stage 1 - Ground Height Detection");
         if (progressAction.Invoke(0, 100)) return null; // 0% - Starting ground detection
     
-        GroundHeightData[] groundData = ProcessGroundRaycastsInBatches(generationInfo, progressAction);
+        SemiBatchedFOVGenerator.GroundHeightData[] groundData = SemiBatchedFOVGenerator.ProcessGroundRaycastsInBatches(generationInfo, progressAction);
     
         if (progressAction.Invoke(20, 100)) return null; // 20% - Ground detection complete
 
@@ -202,16 +210,6 @@ public sealed class BatchedFOVGenerator : IFOVGenerator
         public bool obstacleHit;
     }
 
-    /// <summary>
-    /// Ground height data for a grid cell
-    /// </summary>
-    private struct GroundHeightData
-    {
-        public Vector3 centerPosition;
-        public float height;
-        public bool hasGround;
-    }
-
     #region Helper Methods for Batched Raycasting
 
     /// <summary>
@@ -223,106 +221,10 @@ public sealed class BatchedFOVGenerator : IFOVGenerator
     }
 
     /// <summary>
-    /// Creates a batch of ground detection raycasts for Stage 1
-    /// </summary>
-    private static GroundHeightData[] ProcessGroundRaycastsInBatches(FOVMapGenerationInfo generationInfo, Func<int, int, bool> progressAction)
-    {
-        const float MAX_HEIGHT = 5000.0f;
-        int totalCells = generationInfo.FOVMapWidth * generationInfo.FOVMapHeight;
-        int batchSize = CalculateOptimalBatchSize(generationInfo, totalCells);
-    
-        GroundHeightData[] groundData = new GroundHeightData[totalCells];
-    
-        float planeSizeX = generationInfo.plane.localScale.x;
-        float planeSizeZ = generationInfo.plane.localScale.z;
-    
-        int totalBatches = (totalCells + batchSize - 1) / batchSize; // Ceiling division
-    
-        for (int startIndex = 0; startIndex < totalCells; startIndex += batchSize)
-        {
-            int currentBatchSize = Mathf.Min(batchSize, totalCells - startIndex);
-            int currentBatch = startIndex / batchSize;
-        
-            // Update progress (0% to 20% for ground detection)
-            int progressPercent = 0 + (currentBatch * 20) / totalBatches;
-            if (progressAction.Invoke(progressPercent, 100)) return null;
-        
-            NativeArray<RaycastCommand> commands = new NativeArray<RaycastCommand>(currentBatchSize, Allocator.TempJob);
-            NativeArray<RaycastHit> results = new NativeArray<RaycastHit>(currentBatchSize, Allocator.TempJob);
-        
-            // Build commands for this batch
-            for (int i = 0; i < currentBatchSize; ++i)
-            {
-                int globalIndex = startIndex + i;
-                int squareZ = globalIndex / generationInfo.FOVMapWidth;
-                int squareX = globalIndex % generationInfo.FOVMapWidth;
-            
-                // Position above the sampling point
-                Vector3 rayOriginPosition =
-                    generationInfo.plane.position +
-                    ((squareZ + 0.5f) / generationInfo.FOVMapHeight) * planeSizeZ * generationInfo.plane.forward +
-                    ((squareX + 0.5f) / generationInfo.FOVMapWidth) * planeSizeX * generationInfo.plane.right;
-                rayOriginPosition.y = MAX_HEIGHT;
-
-                commands[i] = new RaycastCommand
-                {
-                    from = rayOriginPosition,
-                    direction = Vector3.down,
-                    distance = 2 * MAX_HEIGHT,
-                    queryParameters = new QueryParameters
-                    {
-                        layerMask = generationInfo.levelLayer,
-                        hitTriggers = QueryTriggerInteraction.Ignore
-                    }
-                };
-            }
-        
-            // Execute batch
-            JobHandle handle = RaycastCommand.ScheduleBatch(commands, results, 1, 1);
-            handle.Complete();
-        
-            // Process results
-            for (int i = 0; i < currentBatchSize; ++i)
-            {
-                int globalIndex = startIndex + i;
-                RaycastHit hit = results[i];
-            
-                if (hit.collider != null)
-                {
-                    Vector3 centerPosition = hit.point + generationInfo.eyeHeight * Vector3.up;
-                    float height = hit.point.y - generationInfo.plane.position.y;
-                
-                    groundData[globalIndex] = new GroundHeightData
-                    {
-                        centerPosition = centerPosition,
-                        height = height,
-                        hasGround = true
-                    };
-                }
-                else
-                {
-                    groundData[globalIndex] = new GroundHeightData
-                    {
-                        centerPosition = Vector3.zero,
-                        height = 0,
-                        hasGround = false
-                    };
-                }
-            }
-        
-            // Cleanup
-            commands.Dispose();
-            results.Dispose();
-        }
-    
-        return groundData;
-    }
-
-    /// <summary>
     /// Processes direction sampling raycasts in configurable batches
     /// Ensures that each state's full set of samples is processed within the same batch
     /// </summary>
-    private static DirectionSamplingState[] ProcessDirectionSamplingInBatches(FOVMapGenerationInfo generationInfo, GroundHeightData[] groundData, Func<int, int, bool> progressAction)
+    private static DirectionSamplingState[] ProcessDirectionSamplingInBatches(FOVMapGenerationInfo generationInfo, SemiBatchedFOVGenerator.GroundHeightData[] groundData, Func<int, int, bool> progressAction)
     {
         int directionsPerSquare = FOVMapGenerator.CHANNELS_PER_TEXEL * generationInfo.layerCount;
         int totalStates = generationInfo.FOVMapWidth * generationInfo.FOVMapHeight * directionsPerSquare;
@@ -334,8 +236,7 @@ public sealed class BatchedFOVGenerator : IFOVGenerator
         {
             for (int squareX = 0; squareX < generationInfo.FOVMapWidth; ++squareX)
             {
-                int cellIndex = squareZ * generationInfo.FOVMapWidth + squareX;
-                GroundHeightData ground = groundData[cellIndex];
+                SemiBatchedFOVGenerator.GroundHeightData ground = groundData[generationInfo.CellIndex(squareX, squareZ)];
 
                 for (int directionIdx = 0; directionIdx < directionsPerSquare; ++directionIdx)
                 {
@@ -423,7 +324,7 @@ public sealed class BatchedFOVGenerator : IFOVGenerator
                 int stateIndex = eligibleStateIndices[idx];
                 DirectionSamplingState state = samplingStates[stateIndex];
 
-                GroundHeightData ground = groundData[state.cellZ * generationInfo.FOVMapWidth + state.cellX];
+                SemiBatchedFOVGenerator.GroundHeightData ground = groundData[state.cellZ * generationInfo.FOVMapWidth + state.cellX];
                 float angleToward = Vector3.SignedAngle(generationInfo.plane.right, Vector3.right, Vector3.up) + state.directionIdx * anglePerDirection;
                 Vector3 samplingDirection = new Vector3(Mathf.Cos(angleToward * Mathf.Deg2Rad), 0.0f, Mathf.Sin(angleToward * Mathf.Deg2Rad));
 
@@ -458,7 +359,7 @@ public sealed class BatchedFOVGenerator : IFOVGenerator
             {
                 int sIndex = eligibleStateIndices[idx];
                 DirectionSamplingState state = samplingStates[sIndex];
-                GroundHeightData ground = groundData[state.cellZ * generationInfo.FOVMapWidth + state.cellX];
+                SemiBatchedFOVGenerator.GroundHeightData ground = groundData[state.cellZ * generationInfo.FOVMapWidth + state.cellX];
 
                 float maxSight = 0.0f;
                 bool obstacleHit = false;
@@ -544,11 +445,11 @@ public sealed class BatchedFOVGenerator : IFOVGenerator
     /// Processes binary search synchronously for a single direction sampling state
     /// Based on the original FindNearestObstacle algorithm
     /// </summary>
-    private static void ProcessBinarySearchSynchronous(DirectionSamplingState state, FOVMapGenerationInfo generationInfo, GroundHeightData[] groundData)
+    private static void ProcessBinarySearchSynchronous(DirectionSamplingState state, FOVMapGenerationInfo generationInfo, SemiBatchedFOVGenerator.GroundHeightData[] groundData)
     {
         // Get ground data for this cell
         int cellIndex = state.cellZ * generationInfo.FOVMapWidth + state.cellX;
-        GroundHeightData ground = groundData[cellIndex];
+        SemiBatchedFOVGenerator.GroundHeightData ground = groundData[cellIndex];
         Vector3 centerPosition = ground.centerPosition;
     
         // Calculate direction

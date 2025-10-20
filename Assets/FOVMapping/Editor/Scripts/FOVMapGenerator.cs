@@ -19,6 +19,13 @@ public interface IFOVGenerator
     /// <param name="progressAction">Progress callback function</param>
     /// <returns>Generated Texture2DArray or null if failed</returns>
     Color[][] Generate(FOVMapGenerationInfo generationInfo, Func<int, int, bool> progressAction);
+    
+    /// <summary>
+    /// Gets the progress stage description for the current progress percentage
+    /// </summary>
+    /// <param name="progressPercent">Current progress percentage (0-100)</param>
+    /// <returns>Stage description string</returns>
+    string GetProgressStage(int progressPercent);
 }
 
 /// <summary>
@@ -38,7 +45,8 @@ public static class FOVMapGenerator
 	private static readonly Dictionary<BakeAlgorithm, IFOVGenerator> _strategies = new Dictionary<BakeAlgorithm, IFOVGenerator>
 	{
 		{ BakeAlgorithm.SingleThreaded, new SingleThreadedFOVGenerator() },
-		{ BakeAlgorithm.Batched, new BatchedFOVGenerator() }
+		{ BakeAlgorithm.Batched, new BatchedFOVGenerator() },
+		{ BakeAlgorithm.SemiBatched, new SemiBatchedFOVGenerator() }
 	};
 
 	public static bool CreateFOVMap(FOVMapGenerationInfo generationInfo, Func<int, int, bool> progressAction)
@@ -165,19 +173,15 @@ public static class FOVMapGenerator
 			generationInfo,
 			(current, total) =>
 			{
-				string algorithmName = generationInfo.bakeAlgorithm == BakeAlgorithm.SingleThreaded ? "Single-Threaded" : "Batched";
-				string stage = "";
-				if (generationInfo.bakeAlgorithm == BakeAlgorithm.Batched)
+				// Get the appropriate strategy to access its progress stage method
+				if (!_strategies.TryGetValue(generationInfo.bakeAlgorithm, out IFOVGenerator strategy))
 				{
-					if (current <= 20) stage = "Ground Detection";
-					else if (current <= 70) stage = "Direction Sampling";
-					else if (current <= 95) stage = "Binary Search Refinement";
-					else stage = "Creating Texture";
+					Debug.LogError($"FOVMapGenerator: Unknown bake algorithm: {generationInfo.bakeAlgorithm}");
+					return false;
 				}
-				else
-				{
-					stage = "Processing";
-				}
+				
+				string algorithmName = generationInfo.bakeAlgorithm.ToString();
+				string stage = strategy.GetProgressStage(current);
 				
 				return EditorUtility.DisplayCancelableProgressBar($"Baking FOV Map ({algorithmName})", $"{stage} - {current}%", (float)current / total);
 			}

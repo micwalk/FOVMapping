@@ -8,7 +8,9 @@ namespace FOVMapping
         [Tooltip("Original single-threaded algorithm - slower but proven correct")]
         SingleThreaded = 0,
         [Tooltip("Batched multi-threaded algorithm - faster but may have minor differences")]
-        Batched = 1
+        Batched = 1,
+        [Tooltip("Semi-batched algorithm - batches ground detection only, single-threaded for direction sampling")]
+        SemiBatched = 2
     }
 
     [CreateAssetMenu(fileName = "FOVBakeSettings", menuName = "FOV Mapping/Bake Settings")]
