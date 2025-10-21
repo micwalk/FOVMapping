@@ -40,16 +40,9 @@ namespace FOVMapping
 /// </summary>
 public sealed class FOVGeneratorBatchedRaycasts : IFOVGenerator
 {
-    public Color[][] Generate(FOVMapGenerationInfo generationInfo, Func<int, int, bool> progressAction)
+    public Color[][] Generate(FOVMapGenerationInfo generationInfo, Func<string, int, int, string, bool> progressAction)
     {
         return GenerateFOVMap_Wavefront(generationInfo, progressAction);
-    }
-    
-    public string GetProgressStage(int progressPercent)
-    {
-        if (progressPercent <= 20) return "Ground Detection";
-        else if (progressPercent <= 95) return "Direction Sampling & Binary Search";
-        else return "Creating Texture";
     }
     
     /// <summary>
@@ -65,7 +58,7 @@ public sealed class FOVGeneratorBatchedRaycasts : IFOVGenerator
     /// <summary>
     /// Processes ground detection raycasts in batches using RaycastCommand
     /// </summary>
-    public static GroundHeightData[] ProcessGroundRaycastsInBatches(FOVMapGenerationInfo generationInfo, Func<int, int, bool> progressAction)
+    public static GroundHeightData[] ProcessGroundRaycastsInBatches(FOVMapGenerationInfo generationInfo, Func<string, int, int, string, bool> progressAction)
     {
         const float MAX_HEIGHT = 5000.0f;
         int totalCells = generationInfo.FOVMapWidth * generationInfo.FOVMapHeight;
@@ -88,9 +81,9 @@ public sealed class FOVGeneratorBatchedRaycasts : IFOVGenerator
             int currentBatchSize = Mathf.Min(batchSize, totalCells - startIndex);
             int currentBatch = startIndex / batchSize;
 
-            // Update progress (0% to 20% for ground detection)
-            int progressPercent = 0 + (currentBatch * 20) / totalBatches;
-            if (progressAction.Invoke(progressPercent, 100)) return null;
+            // Update progress for ground detection
+            int processedCells = Mathf.Min(startIndex + currentBatchSize, totalCells);
+            if (progressAction.Invoke(FOVProgressStages.GroundDetection, processedCells, totalCells, FOVProgressStages.Cells)) return null;
 
             // Build commands for this batch
             for (int i = 0; i < currentBatchSize; ++i)
@@ -168,7 +161,7 @@ public sealed class FOVGeneratorBatchedRaycasts : IFOVGenerator
         return groundData;
     }
     
-    private static Color[][] GenerateFOVMap_Wavefront(FOVMapGenerationInfo generationInfo, Func<int, int, bool> progressAction) {
+    private static Color[][] GenerateFOVMap_Wavefront(FOVMapGenerationInfo generationInfo, Func<string, int, int, string, bool> progressAction) {
         // Basic checks
         bool checkPassed = generationInfo.CheckSettings();
 
@@ -198,12 +191,12 @@ public sealed class FOVGeneratorBatchedRaycasts : IFOVGenerator
             .Select(_ => new Color[generationInfo.FOVMapWidth * generationInfo.FOVMapHeight]).ToArray();
 
         // STAGE 1: BATCHED GROUND HEIGHT DETECTION
-        Debug.Log("FOVGeneratorBatchedRaycasts: Starting Stage 1 - BatchedRaycasts Ground Height Detection");
-        if (progressAction.Invoke(0, 100)) return null; // 0% - Starting ground detection
+        int totalCells = generationInfo.FOVMapWidth * generationInfo.FOVMapHeight;
+        if (progressAction.Invoke(FOVProgressStages.GroundDetection, 0, totalCells, FOVProgressStages.Cells)) return null;
 
         GroundHeightData[] groundData = ProcessGroundRaycastsInBatches(generationInfo, progressAction);
 
-        if (progressAction.Invoke(20, 100)) return null; // 20% - Ground detection complete
+        if (progressAction.Invoke(FOVProgressStages.GroundDetection, totalCells, totalCells, FOVProgressStages.Cells)) return null;
 
         // STAGE 2 & 3: SINGLE-THREADED DIRECTION SAMPLING AND BINARY SEARCH
         Debug.Log("FOVGeneratorBatchedRaycasts: Starting Stage 2 & 3 - Single-threaded Direction Sampling and Binary Search");
@@ -255,7 +248,7 @@ public sealed class FOVGeneratorBatchedRaycasts : IFOVGenerator
     static readonly ProfilerMarker kRaycast    = new("FOV/Raycast");
     static readonly ProfilerMarker kConsume     = new("FOV/Consume");
 
-    static void RunDirectionsWavefront(FOVMapGenerationInfo g, GroundHeightData[] ground, Color[][] FOVMapTexels, Func<int,int,bool> progressAction)
+    static void RunDirectionsWavefront(FOVMapGenerationInfo g, GroundHeightData[] ground, Color[][] FOVMapTexels, Func<string, int, int, string, bool> progressAction)
     {
         int cells  = g.CellCount;
         int directionsPerSquare = FOVMapGenerator.CHANNELS_PER_TEXEL * g.layerCount;
@@ -289,7 +282,7 @@ public sealed class FOVGeneratorBatchedRaycasts : IFOVGenerator
             totalDirs += directionsPerSquare;
         }
         
-        Debug.Log($"RunDirectionsWavefront Prep: Cell Count: {cells}, ready cells: {readyCells.Count}. Cells with Ground: {cellsWithGround}. Total Directions with Ground: {totalDirs}");
+        // Debug.Log($"RunDirectionsWavefront Prep: Cell Count: {cells}, ready cells: {readyCells.Count}. Cells with Ground: {cellsWithGround}. Total Directions with Ground: {totalDirs}");
 
         // Early out: no ground anywhere
         if (totalDirs == 0)
@@ -650,12 +643,10 @@ public sealed class FOVGeneratorBatchedRaycasts : IFOVGenerator
                 }
             }
 
-            // Progress (map 20%..95%)
-            int pct = 20 + Mathf.RoundToInt(75f * (doneCount / (float)totalDirs));
-            
-            if (progressAction.Invoke(Mathf.Clamp(pct, 20, 95), 100))
+            // Progress reporting for FOV raycasting
+            if (progressAction.Invoke(FOVProgressStages.FOVRaycasting, doneCount, totalDirs, FOVProgressStages.Directions))
             {
-                Debug.LogError($"RunDirectionsWavefront Aborted @ Wave {wave}: Cells: {cells} | CellQ: {readyCells} | DoneCount: {doneCount} | TotalDirs: {totalDirs} | CellsWithGround: {cellsWithGround}");
+                Debug.LogWarning($"FOV Generation cancelled at Wave {wave} ({doneCount}/{totalDirs} directions completed)");
                 kWaveLoop.End();
                 break;
             }

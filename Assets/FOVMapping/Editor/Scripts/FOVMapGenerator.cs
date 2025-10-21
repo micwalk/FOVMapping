@@ -18,14 +18,21 @@ public interface IFOVGenerator
     /// <param name="generationInfo">The generation parameters and settings</param>
     /// <param name="progressAction">Progress callback function</param>
     /// <returns>Generated Texture2DArray or null if failed</returns>
-    Color[][] Generate(FOVMapGenerationInfo generationInfo, Func<int, int, bool> progressAction);
+    Color[][] Generate(FOVMapGenerationInfo generationInfo, Func<string, int, int, string, bool> progressAction);
+}
+
+/// <summary>
+/// Helper class for managing progress stages with consistent naming
+/// </summary>
+public static class FOVProgressStages
+{
+    public static readonly string GroundDetection = "Ground Detection";
+    public static readonly string FOVRaycasting = "FOV Raycasting";
+    public static readonly string CreatingTexture = "Creating Texture";
     
-    /// <summary>
-    /// Gets the progress stage description for the current progress percentage
-    /// </summary>
-    /// <param name="progressPercent">Current progress percentage (0-100)</param>
-    /// <returns>Stage description string</returns>
-    string GetProgressStage(int progressPercent);
+    public static readonly string Cells = "cells";
+    public static readonly string Directions = "directions";
+    public static readonly string Waves = "waves";
 }
 
 /// <summary>
@@ -49,7 +56,7 @@ public static class FOVMapGenerator
 		{ BakeAlgorithm.BatchedJobs, new FOVGeneratorBatchedJobs() },
 	};
 
-	public static bool CreateFOVMap(FOVMapGenerationInfo generationInfo, Func<int, int, bool> progressAction)
+	public static bool CreateFOVMap(FOVMapGenerationInfo generationInfo, Func<string, int, int, string, bool> progressAction)
 	{
 		// Get the appropriate strategy based on the bake algorithm
 		if (!_strategies.TryGetValue(generationInfo.bakeAlgorithm, out IFOVGenerator strategy))
@@ -166,19 +173,13 @@ public static class FOVMapGenerator
 		bool isSuccessful = CreateFOVMap
 		(
 			generationInfo,
-			(current, total) =>
+			(stage, doneItems, itemTotal, itemName) =>
 			{
-				// Get the appropriate strategy to access its progress stage method
-				if (!_strategies.TryGetValue(generationInfo.bakeAlgorithm, out IFOVGenerator strategy))
-				{
-					Debug.LogError($"FOVMapGenerator: Unknown bake algorithm: {generationInfo.bakeAlgorithm}");
-					return false;
-				}
-				
 				string algorithmName = generationInfo.bakeAlgorithm.ToString();
-				string stage = strategy.GetProgressStage(current);
+				float progress = itemTotal > 0 ? (float)doneItems / itemTotal : 0f;
+				string progressText = $"{stage} - {doneItems}/{itemTotal} {itemName} ({progress:P0})";
 				
-				return EditorUtility.DisplayCancelableProgressBar($"Baking FOV Map ({algorithmName})", $"{stage} - {current}%", (float)current / total);
+				return EditorUtility.DisplayCancelableProgressBar($"Baking FOV Map ({algorithmName})", progressText, progress);
 			}
 		);
 

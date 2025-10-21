@@ -37,16 +37,11 @@ namespace FOVMapping
 /// </summary>
 public sealed class FOVGeneratorSingleThreaded : IFOVGenerator 
 {
-	public Color[][] Generate(FOVMapGenerationInfo generationInfo, Func<int, int, bool> progressAction) {
+	public Color[][] Generate(FOVMapGenerationInfo generationInfo, Func<string, int, int, string, bool> progressAction) {
 		return GenerateFOVMap(generationInfo, progressAction);
 	}
 	
-	public string GetProgressStage(int progressPercent)
-	{
-		return "Processing";
-	}
-	
-	private static Color[][] GenerateFOVMap(FOVMapGenerationInfo generationInfo, Func<int, int, bool> progressAction)
+	private static Color[][] GenerateFOVMap(FOVMapGenerationInfo generationInfo, Func<string, int, int, string, bool> progressAction)
 	{
 		// Basic checks
 		bool checkPassed = generationInfo.CheckSettings();
@@ -129,7 +124,7 @@ public sealed class FOVGeneratorSingleThreaded : IFOVGenerator
 				}
 			}
 
-			if (progressAction.Invoke(squareZ, generationInfo.FOVMapHeight)) return null;
+			if (progressAction.Invoke(FOVProgressStages.FOVRaycasting, squareZ, generationInfo.FOVMapHeight, FOVProgressStages.Cells)) return null;
 		}
 
 		return FOVMapTexels;
