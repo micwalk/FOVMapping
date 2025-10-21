@@ -10,7 +10,9 @@ namespace FOVMapping
         [Tooltip("Batched Raycasts via RaycastCommand, single-threaded raycast command generation")]
         BatchedRaycasts = 1,
         [Tooltip("Fully Jobified RaycastCommand generation.")]
-        BatchedJobs = 2
+        BatchedJobs = 2,
+        [Tooltip("New Algorithm: Distance Search instead of Angle Search for Obstacles. (Jobified)")]
+        DistanceSearch = 3
     }
 
     [CreateAssetMenu(fileName = "FOVBakeSettings", menuName = "FOV Mapping/Bake Settings")]

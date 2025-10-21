@@ -54,6 +54,7 @@ public static class FOVMapGenerator
 		{ BakeAlgorithm.SingleThreaded, new FOVGeneratorSingleThreaded() },
 		{ BakeAlgorithm.BatchedRaycasts, new FOVGeneratorBatchedRaycasts() },
 		{ BakeAlgorithm.BatchedJobs, new FOVGeneratorBatchedJobs() },
+		{ BakeAlgorithm.DistanceSearch , new FOVGeneratorDistanceBasedSearch()}
 	};
 
 	public static bool CreateFOVMap(FOVMapGenerationInfo generationInfo, Func<string, int, int, string, bool> progressAction)
