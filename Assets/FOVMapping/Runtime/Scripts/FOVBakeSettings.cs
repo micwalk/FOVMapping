@@ -9,8 +9,8 @@ namespace FOVMapping
         SingleThreaded = 0,
         [Tooltip("Batched Raycasts via RaycastCommand, single-threaded raycast command generation")]
         BatchedRaycasts = 1,
-        // [Tooltip("Fully Jobified RaycastCommand generation.")]
-        // BatchedJobs = 2
+        [Tooltip("Fully Jobified RaycastCommand generation.")]
+        BatchedJobs = 2
     }
 
     [CreateAssetMenu(fileName = "FOVBakeSettings", menuName = "FOV Mapping/Bake Settings")]

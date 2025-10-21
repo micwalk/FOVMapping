@@ -46,6 +46,7 @@ public static class FOVMapGenerator
 	{
 		{ BakeAlgorithm.SingleThreaded, new FOVGeneratorSingleThreaded() },
 		{ BakeAlgorithm.BatchedRaycasts, new FOVGeneratorBatchedRaycasts() },
+		{ BakeAlgorithm.BatchedJobs, new FOVGeneratorBatchedJobs() },
 	};
 
 	public static bool CreateFOVMap(FOVMapGenerationInfo generationInfo, Func<int, int, bool> progressAction)
@@ -90,8 +91,6 @@ public static class FOVMapGenerator
 				// Mark the asset as dirty and save without full refresh
 				EditorUtility.SetDirty(existingAsset);
 				AssetDatabase.SaveAssets();
-				
-				Debug.Log($"FOVMapGenerator: Updated existing FOV map at {FOVMapPath}");
 			}
 			else
 			{
@@ -114,9 +113,6 @@ public static class FOVMapGenerator
 				
 				AssetDatabase.CreateAsset(textureArray, FOVMapPath);
 				AssetDatabase.SaveAssets();
-				
-				string reason = existingAsset != null ? " (dimensions/format changed)" : "";
-				Debug.Log($"FOVMapGenerator: Created new FOV map at {FOVMapPath}{reason}");
 			}
 		}
 		catch (Exception e)
@@ -205,7 +201,6 @@ public static class FOVMapGenerator
 				settings.FOVMapArray = generatedFOVMap;
 				EditorUtility.SetDirty(settings);
 				AssetDatabase.SaveAssets();
-				Debug.Log($"FOV map auto-assigned to settings: {assetPath}");
 			}
 			else
 			{
