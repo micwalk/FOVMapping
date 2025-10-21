@@ -16,10 +16,6 @@ namespace FOVMapping
     [CreateAssetMenu(fileName = "FOVBakeSettings", menuName = "FOV Mapping/Bake Settings")]
     public class FOVBakeSettings : ScriptableObject
     {
-        [Header("Algorithm Selection")]
-        [Tooltip("Choose which baking algorithm to use")]
-        public BakeAlgorithm bakeAlgorithm = BakeAlgorithm.SingleThreaded;
-
         [Header("FOV Map Generation")]
         [Tooltip("(Essential) Path to save the generated FOV map")] 
         public string path = "FOVMapping/FOVMaps";
@@ -61,8 +57,11 @@ namespace FOVMapping
         [Tooltip("(Advanced) Surfaces located below this vertical angle are never considered vertical.")] 
         public float blockedRayAngleThreshold = 0.0f;
 
-        [Header("Performance Settings")]
-        [Tooltip("(Advanced) Maximum number of raycasts to process in a single batch. Higher values = better performance but more memory usage. Lower values = less memory but slower processing.")]
+        [Header("Algorithm Selection")]
+        [Tooltip("Choose which baking algorithm to use. BatchedJobs is the fastest, but others retained in case of technical errors. All three should produce the same result.")]
+        public BakeAlgorithm bakeAlgorithm = BakeAlgorithm.BatchedJobs;
+        
+        [Tooltip("(Advanced) Maximum number of raycasts to process in a single batch. Higher values = better performance but more memory usage. Lower values = less memory. Only used when BakeAlgorithm != SingleThreaded.")]
         [Range(1, 1000000)]
         public int maxBatchSize = 500;
 
