@@ -9,7 +9,7 @@ namespace FOVMapping
         [SerializeField] private FOVBakeSettings settings;
         [SerializeField] private FOVManager fovManager; // This IS the projector plane (FOVManager is attached to the plane GameObject)
 
-        [MenuItem("Window/FOV Mapping")]
+        [MenuItem("Window/FOV Mapping/FOVBake Window")]
         public static void ShowWindow()
         {
             GetWindow(typeof(FOVMappingEditorWindow));

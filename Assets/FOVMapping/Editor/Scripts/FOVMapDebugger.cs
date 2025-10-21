@@ -9,7 +9,7 @@ namespace FOVMapping
     /// </summary>
     public class FOVMapDebugger : EditorWindow
     {
-        [MenuItem("Tools/FOV Mapping/Debug Single Cell")]
+        [MenuItem("Window/FOV Mapping/Debug Single Cell")]
         static void ShowWindow()
         {
             var window = GetWindow<FOVMapDebugger>();
