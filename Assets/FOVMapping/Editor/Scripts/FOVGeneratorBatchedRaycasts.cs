@@ -122,8 +122,9 @@ public sealed class FOVGeneratorBatchedRaycasts : IFOVGenerator
             // Execute batch
             JobHandle handle = RaycastCommand.ScheduleBatch(commandBuffer, resultBuffer, 1, 1);
             
+            handle.Complete(); // Block main thread to await completion
+            
             // Process results
-            handle.Complete(); // Await completion
             for (int i = 0; i < currentBatchSize; ++i)
             {
                 int globalIndex = startIndex + i;
@@ -298,7 +299,7 @@ public sealed class FOVGeneratorBatchedRaycasts : IFOVGenerator
         // Active pool (bounded) + free list to reuse slots
         int batchSize = Mathf.Max(1, g.maxBatchSize);
         int activeDirCap   = Mathf.Clamp(batchSize * 8, batchSize, Mathf.Min(totalDirs, batchSize * 32)); // headroom
-        var activeDirList      = new List<ActiveDir>(activeDirCap);
+        var activeDirList             = new List<ActiveDir>(activeDirCap);
         var activeDirFreeSlotIndicies = new Stack<int>(activeDirCap);
 
         // Prealloc physics buffers
